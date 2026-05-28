@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rastreador de Erros — Equipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0f11;
+    --surface: #16181c;
+    --surface2: #1e2026;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f0f0ef;
+    --muted: #6b6f7a;
+    --accent: #e8ff47;
+    --accent2: #ff6b35;
+    --green: #3dffa0;
+    --yellow: #ffd166;
+    --red: #ff4d6d;
+    --orange: #ff6b35;
+    --radius: 10px;
+    --font: 'Syne', sans-serif;
+    --mono: 'DM Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* LAYOUT */
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+  /* SIDEBAR */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 28px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .sidebar-logo {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding: 0 8px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--muted);
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    transition: all 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--accent); color: #0e0f11; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .sidebar-section {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 14px 12px 4px;
+  }
+
+  /* MAIN */
+  .main { padding: 36px 40px; overflow-y: auto; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* PAGE HEADER */
+  .page-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .page-title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+  .page-sub { font-size: 13px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+
+  /* CARDS GRID */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .kpi-label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .kpi-val { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; }
+  .kpi-card.accent .kpi-val { color: var(--accent); }
+  .kpi-card.red .kpi-val { color: var(--red); }
+  .kpi-card.green .kpi-val { color: var(--green); }
+  .kpi-card.orange .kpi-val { color: var(--orange); }
+
+  /* EMP GRID */
+  .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .emp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+  .emp-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .emp-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+  .emp-card:hover::before { opacity: 1; }
+  .emp-card-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .emp-card-count { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-bottom: 14px; }
+  .emp-card-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .emp-stat { background: var(--surface2); border-radius: 8px; padding: 10px 12px; text-align: center; }
+  .emp-stat-val { font-size: 18px; font-weight: 800; }
+  .emp-stat-lbl { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 2px; }
+  .trend-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .trend-up { background: rgba(255,77,109,0.15); color: var(--red); }
+  .trend-down { background: rgba(61,255,160,0.15); color: var(--green); }
+  .trend-flat { background: rgba(255,255,255,0.07); color: var(--muted); }
+  .empty-state {
+    text-align: center; padding: 64px 24px;
+    color: var(--muted); font-size: 14px;
+    border: 1px dashed var(--border2); border-radius: var(--radius);
+  }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-state h3 { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+
+  /* DETAIL */
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--muted); background: none; border: none; cursor: pointer; padding: 0;
+    margin-bottom: 20px; transition: color 0.15s;
+  }
+  .back-btn:hover { color: var(--text); }
+  .metrics-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 24px; }
+
+  /* CHART */
+  .chart-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .chart-title { font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; }
+  .chart-canvas-wrap { position: relative; height: 200px; }
+
+  /* ERROR LIST */
+  .errors-section-title {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 12px;
+  }
+  .error-list { display: flex; flex-direction: column; gap: 8px; }
+  .error-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex; align-items: flex-start; gap: 14px;
+  }
+  .sev-pill {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 20px; margin-top: 1px;
+    font-family: var(--mono);
+  }
+  .sev-baixa { background: rgba(61,255,160,0.12); color: var(--green); }
+  .sev-media { background: rgba(255,209,102,0.12); color: var(--yellow); }
+  .sev-alta { background: rgba(255,107,53,0.14); color: var(--orange); }
+  .sev-critica { background: rgba(255,77,109,0.14); color: var(--red); }
+  .error-desc { font-size: 14px; color: var(--text); margin-bottom: 3px; font-weight: 600; }
+  .error-meta { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .del-btn {
+    margin-left: auto; flex-shrink: 0;
+    background: none; border: none; cursor: pointer;
+    color: var(--muted); font-size: 16px; padding: 2px 6px;
+    border-radius: 6px; transition: background 0.15s, color 0.15s;
+  }
+  .del-btn:hover { background: rgba(255,77,109,0.15); color: var(--red); }
+
+  /* FORM */
+  .form-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    max-width: 680px;
+  }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .form-group.full { grid-column: 1/-1; }
+  .form-label { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .form-input, .form-select, .form-textarea {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: var(--text);
+    font-family: var(--font);
+    transition: border-color 0.15s;
+    outline: none;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+  .form-select option { background: var(--surface); }
+  .form-textarea { resize: vertical; min-height: 90px; }
+  .sev-picker { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+  .sev-opt {
+    padding: 10px 6px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: all 0.12s;
+    color: var(--muted);
+  }
+  .sev-opt:hover { border-color: var(--border); color: var(--text); background: var(--surface2); }
+  .sev-opt.active-baixa { border-color: var(--green); color: var(--green); background: rgba(61,255,160,0.08); }
+  .sev-opt.active-media { border-color: var(--yellow); color: var(--yellow); background: rgba(255,209,102,0.08); }
+  .sev-opt.active-alta { border-color: var(--orange); color: var(--orange); background: rgba(255,107,53,0.1); }
+  .sev-opt.active-critica { border-color: var(--red); color: var(--red); background: rgba(255,77,109,0.1); }
+  .sev-icon { font-size: 18px; display: block; margin-bottom: 4px; }
+  .submit-btn {
+    background: var(--accent);
+    color: #0e0f11;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 28px;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .submit-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+  .toast {
+    position: fixed; bottom: 28px; right: 28px;
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 14px 20px;
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 10px;
+    transform: translateY(20px); opacity: 0;
+    transition: all 0.25s; z-index: 999;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast-ok { border-left: 3px solid var(--green); }
+  .toast-err { border-left: 3px solid var(--red); }
+
+  /* PASTE TAB */
+  .paste-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); margin: 6px 0 14px; line-height: 1.6; }
+  .parse-result {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: var(--radius); padding: 18px 20px;
+    margin-top: 16px; display: none;
+    font-size: 13px; line-height: 1.8;
+  }
+  .parse-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .parse-row:last-child { border-bottom: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-baixa { background: var(--green); }
+  .dot-media { background: var(--yellow); }
+  .dot-alta { background: var(--orange); }
+  .dot-critica { background: var(--red); }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">⬡ ErrTrack</div>
+    <button class="nav-item active" onclick="nav('painel',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Painel
+    </button>
+    <button class="nav-item" onclick="nav('registrar',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      Registrar Erro
+    </button>
+    <button class="nav-item" onclick="nav('colar',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+      Colar Dados
+    </button>
+    <div class="sidebar-section">Funcionários</div>
+    <div id="sidebar-emps"></div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- PAINEL -->
+    <div id="page-painel" class="page active">
+      <div id="painel-list">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Painel Geral</div>
+            <div class="page-sub">visão consolidada da equipe</div>
+          </div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi-card accent"><div class="kpi-label">Total de Erros</div><div class="kpi-val" id="kpi-total">0</div></div>
+          <div class="kpi-card red"><div class="kpi-label">Críticos</div><div class="kpi-val" id="kpi-critica">0</div></div>
+          <div class="kpi-card orange"><div class="kpi-label">Piorando</div><div class="kpi-val" id="kpi-piora">0</div></div>
+          <div class="kpi-card green"><div class="kpi-label">Melhorando</div><div class="kpi-val" id="kpi-melhora">0</div></div>
+        </div>
+        <div class="emp-grid" id="emp-grid"></div>
+        <div class="empty-state" id="emp-empty" style="display:none">
+          <div class="icon">👥</div>
+          <h3>Nenhum funcionário ainda</h3>
+          <p>Registre o primeiro erro para começar a monitorar a equipe.</p>
+        </div>
+      </div>
+      <div id="painel-detail" style="display:none">
+        <button class="back-btn" onclick="showList()">← Voltar ao painel</button>
+        <div class="page-header">
+          <div>
+            <div class="page-title" id="detail-name">—</div>
+            <div class="page-sub" id="detail-cargo">—</div>
+          </div>
+          <span id="detail-trend-badge"></span>
+        </div>
+        <div class="metrics-row">
+          <div class="kpi-card"><div class="kpi-label">Total</div><div class="kpi-val" id="dm-total">0</div></div>
+          <div class="kpi-card"><div class="kpi-label">Média Grav.</div><div class="kpi-val" id="dm-avg">0</div></div>
+          <div class="kpi-card"><div class="kpi-label">Último Período</div><div class="kpi-val" style="font-size:16px" id="dm-period">—</div></div>
+          <div class="kpi-card"><div class="kpi-label">Críticos</div><div class="kpi-val" id="dm-critica">0</div></div>
+        </div>
+        <div class="chart-container">
+          <div class="chart-title">Gravidade média por período</div>
+          <div class="chart-canvas-wrap"><canvas id="detailChart"></canvas></div>
+        </div>
+        <div class="errors-section-title">Histórico de Erros</div>
+        <div class="error-list" id="detail-errors"></div>
+      </div>
+    </div>
+
+    <!-- REGISTRAR -->
+    <div id="page-registrar" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Registrar Erro</div>
+          <div class="page-sub">adicione um novo registro manualmente</div>
+        </div>
+      </div>
+      <div class="form-card">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Funcionário *</label>
+            <input class="form-input" id="f-nome" placeholder="Nome completo">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cargo (opcional)</label>
+            <input class="form-input" id="f-cargo" placeholder="Ex: Atendente, Analista...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Período *</label>
+            <input class="form-input" id="f-periodo" placeholder="Ex: Semana 1, Jun/2025, Dia 15...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categoria</label>
+            <input class="form-input" id="f-cat" placeholder="Ex: Atendimento, Processo...">
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Descrição do erro *</label>
+            <textarea class="form-textarea" id="f-desc" placeholder="Descreva detalhadamente o que aconteceu..."></textarea>
+          </div>
+          <div class="form-group full">
+            <label class="form-label">Gravidade *</label>
+            <div class="sev-picker">
+              <div class="sev-opt" data-sev="baixa" onclick="selSev(this)"><span class="sev-icon">🟢</span>Baixa</div>
+              <div class="sev-opt" data-sev="media" onclick="selSev(this)"><span class="sev-icon">🟡</span>Média</div>
+              <div class="sev-opt" data-sev="alta" onclick="selSev(this)"><span class="sev-icon">🟠</span>Alta</div>
+              <div class="sev-opt" data-sev="critica" onclick="selSev(this)"><span class="sev-icon">🔴</span>Crítica</div>
+            </div>
+          </div>
+        </div>
+        <button class="submit-btn" onclick="saveError()">Salvar Registro</button>
+      </div>
+    </div>
+
+    <!-- COLAR -->
+    <div id="page-colar" class="page">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Colar Dados</div>
+          <div class="page-sub">importe registros em formato livre</div>
+        </div>
+      </div>
+      <div class="form-card" style="max-width:720px">
+        <div class="form-group">
+          <label class="form-label">Funcionário *</label>
+          <input class="form-input" id="p-nome" placeholder="Nome do funcionário">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Dados para importar *</label>
+          <textarea class="form-textarea" id="p-dados" style="min-height:140px" placeholder="Cole aqui qualquer formato. Exemplos:&#10;Semana 1 - Digitação incorreta - gravidade baixa&#10;Semana 2 | Falha no atendimento | alta&#10;Período 3: Processo errado, crítico&#10;..."></textarea>
+        </div>
+        <div class="paste-hint">
+          ℹ️ Palavras reconhecidas automaticamente:<br>
+          <strong style="color:var(--green)">baixa / leve / menor</strong> &nbsp;|&nbsp;
+          <strong style="color:var(--yellow)">média / moderada</strong> &nbsp;|&nbsp;
+          <strong style="color:var(--orange)">alta / grave / sério</strong> &nbsp;|&nbsp;
+          <strong style="color:var(--red)">crítica / critical / urgente</strong>
+        </div>
+        <button class="submit-btn" onclick="parseColar()">Analisar e Importar</button>
+        <div class="parse-result" id="parse-result"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ── DATA ──────────────────────────────────────────────────────────
+let DB = JSON.parse(localStorage.getItem('errtrack_v2') || '{}');
+const save = () => localStorage.setItem('errtrack_v2', JSON.stringify(DB));
+
+const SEV_W = { baixa:1, media:2, alta:3, critica:4 };
+const SEV_COLOR = { baixa:'#3dffa0', media:'#ffd166', alta:'#ff6b35', critica:'#ff4d6d' };
+let selSevVal = '';
+let detailChart = null;
+let currentEmp = null;
+
+// ── NAVIGATION ────────────────────────────────────────────────────
+function nav(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (page === 'painel') renderPainel();
+}
+
+// ── SIDEBAR EMPLOYEES ─────────────────────────────────────────────
+function renderSidebar() {
+  const el = document.getElementById('sidebar-emps');
+  const names = Object.keys(DB);
+  el.innerHTML = names.length
+    ? names.map(n => `<button class="nav-item" onclick="openDetail('${esc(n)}');nav('painel',null)" style="font-size:12px;padding:7px 12px">${n}</button>`).join('')
+    : `<div style="padding:6px 12px;font-size:11px;color:var(--muted)">Nenhum funcionário</div>`;
+}
+
+// ── PAINEL ────────────────────────────────────────────────────────
+function renderPainel() {
+  renderSidebar();
+  const names = Object.keys(DB);
+  const grid = document.getElementById('emp-grid');
+  const empty = document.getElementById('emp-empty');
+
+  let totErr=0, totCri=0, totPiora=0, totMelh=0;
+  names.forEach(n => {
+    const e = DB[n].errors;
+    totErr += e.length;
+    totCri += e.filter(x => x.sev==='critica').length;
+    const t = getTrend(e);
+    if(t==='up') totPiora++;
+    if(t==='down') totMelh++;
+  });
+  document.getElementById('kpi-total').textContent = totErr;
+  document.getElementById('kpi-critica').textContent = totCri;
+  document.getElementById('kpi-piora').textContent = totPiora;
+  document.getElementById('kpi-melhora').textContent = totMelh;
+
+  if (!names.length) { grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display = 'none';
+  grid.innerHTML = names.map(n => {
+    const emp = DB[n];
+    const erros = emp.errors;
+    const trend = getTrend(erros);
+    const avg = getAvg(erros);
+    const criticas = erros.filter(e => e.sev==='critica').length;
+    const { label, cls, icon } = trendInfo(trend);
+    return `<div class="emp-card" onclick="openDetail('${esc(n)}')">
+      <div class="emp-card-name">${n}</div>
+      <div class="emp-card-count">${emp.cargo ? emp.cargo + ' · ' : ''}${erros.length} erro${erros.length!==1?'s':''}</div>
+      <div class="emp-card-stats">
+        <div class="emp-stat"><div class="emp-stat-val">${avg}</div><div class="emp-stat-lbl">Média</div></div>
+        <div class="emp-stat"><div class="emp-stat-val" style="color:var(--red)">${criticas}</div><div class="emp-stat-lbl">Críticos</div></div>
+      </div>
+      <span class="trend-badge ${cls}">${icon} ${label}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── DETAIL ────────────────────────────────────────────────────────
+function openDetail(nome) {
+  currentEmp = nome;
+  const emp = DB[nome];
+  if (!emp) return;
+  const erros = emp.errors;
+  document.getElementById('painel-list').style.display = 'none';
+  document.getElementById('painel-detail').style.display = 'block';
+  document.getElementById('detail-name').textContent = nome;
+  document.getElementById('detail-cargo').textContent = emp.cargo || 'sem cargo definido';
+
+  const trend = getTrend(erros);
+  const { label, cls, icon } = trendInfo(trend);
+  document.getElementById('detail-trend-badge').innerHTML = `<span class="trend-badge ${cls}">${icon} ${label}</span>`;
+
+  const avg = getAvg(erros);
+  const criticas = erros.filter(e => e.sev==='critica').length;
+  const periodos = [...new Set(erros.map(e => e.periodo))];
+  document.getElementById('dm-total').textContent = erros.length;
+  document.getElementById('dm-avg').textContent = avg;
+  document.getElementById('dm-period').textContent = periodos[periodos.length-1] || '—';
+  document.getElementById('dm-critica').textContent = criticas;
+
+  // Chart
+  const byP = {};
+  erros.forEach(e => {
+    if (!byP[e.periodo]) byP[e.periodo] = { sum:0, cnt:0 };
+    byP[e.periodo].sum += SEV_W[e.sev]; byP[e.periodo].cnt++;
+  });
+  const labels = Object.keys(byP);
+  const avgs = labels.map(l => +(byP[l].sum/byP[l].cnt).toFixed(2));
+
+  if (detailChart) detailChart.destroy();
+  const ctx = document.getElementById('detailChart').getContext('2d');
+  detailChart = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        label:'Gravidade Média',
+        data: avgs,
+        borderColor:'#e8ff47',
+        backgroundColor:'rgba(232,255,71,0.08)',
+        tension:0.4,
+        fill:true,
+        pointBackgroundColor:'#e8ff47',
+        pointRadius:5,
+        borderWidth:2
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ ticks:{color:'#6b6f7a',font:{family:'DM Mono',size:11}}, grid:{color:'rgba(255,255,255,0.04)'} },
+        y:{ min:0, max:4.5,
+          ticks:{callback:v=>['','Baixa','Média','Alta','Crítica'][Math.round(v)]||'',color:'#6b6f7a',font:{family:'DM Mono',size:10}},
+          grid:{color:'rgba(255,255,255,0.04)'}
+        }
+      }
+    }
+  });
+
+  // Error list
+  const listEl = document.getElementById('detail-errors');
+  const sorted = [...erros].sort((a,b) => b.ts-a.ts);
+  listEl.innerHTML = sorted.map((e,i) => `
+    <div class="error-row">
+      <span class="sev-pill sev-${e.sev}">${e.sev}</span>
+      <div style="flex:1">
+        <div class="error-desc">${e.desc}</div>
+        <div class="error-meta">${e.periodo}${e.cat?' · '+e.cat:''}</div>
+      </div>
+      <button class="del-btn" onclick="deleteError('${esc(nome)}',${i})" title="Remover">×</button>
+    </div>`).join('');
+}
+
+function showList() {
+  document.getElementById('painel-list').style.display = 'block';
+  document.getElementById('painel-detail').style.display = 'none';
+  renderPainel();
+}
+
+function deleteError(nome, idx) {
+  const sorted = [...DB[nome].errors].sort((a,b) => b.ts-a.ts);
+  const target = sorted[idx];
+  DB[nome].errors = DB[nome].errors.filter(e => e !== target);
+  if (!DB[nome].errors.length) delete DB[nome];
+  save();
+  if (DB[nome]) openDetail(nome);
+  else { showList(); toast('Erro removido.', true); }
+}
+
+// ── FORM SAVE ─────────────────────────────────────────────────────
+function selSev(el) {
+  selSevVal = el.dataset.sev;
+  document.querySelectorAll('.sev-opt').forEach(b => { b.className='sev-opt'; });
+  el.classList.add('active-'+selSevVal);
+}
+
+function saveError() {
+  const nome = document.getElementById('f-nome').value.trim();
+  const cargo = document.getElementById('f-cargo').value.trim();
+  const periodo = document.getElementById('f-periodo').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const cat = document.getElementById('f-cat').value.trim();
+  if (!nome||!periodo||!desc||!selSevVal) { toast('Preencha todos os campos obrigatórios.', false); return; }
+  if (!DB[nome]) DB[nome] = { cargo, errors: [] };
+  if (cargo) DB[nome].cargo = cargo;
+  DB[nome].errors.push({ periodo, desc, sev:selSevVal, cat, ts:Date.now() });
+  save();
+  toast('Erro registrado com sucesso!', true);
+  document.getElementById('f-periodo').value='';
+  document.getElementById('f-desc').value='';
+  document.getElementById('f-cat').value='';
+  selSevVal='';
+  document.querySelectorAll('.sev-opt').forEach(b => b.className='sev-opt');
+  renderSidebar();
+}
+
+// ── PASTE IMPORT ──────────────────────────────────────────────────
+function parseColar() {
+  const nome = document.getElementById('p-nome').value.trim();
+  const raw = document.getElementById('p-dados').value.trim();
+  if (!nome||!raw) { toast('Preencha o nome e cole os dados.', false); return; }
+  const lines = raw.split('\n').filter(l => l.trim());
+  const sevMap = {
+    'crítica':4,'critica':4,'critical':4,'urgente':4,'emergência':4,
+    'alta':3,'alto':3,'grave':3,'graves':3,'sério':3,'serio':3,'severo':3,
+    'media':2,'média':2,'medium':2,'moderada':2,'moderado':2,'moderado':2,
+    'baixa':1,'baixo':1,'leve':1,'menor':1,'pequena':1,'mínima':1,'minima':1
+  };
+  const results = [];
+  lines.forEach(line => {
+    const lower = line.toLowerCase();
+    let sev='media', found=0;
+    for (const [k,v] of Object.entries(sevMap)) {
+      if (lower.includes(k) && v>found) { found=v; sev=Object.keys(SEV_W).find(s=>SEV_W[s]===v)||'media'; }
+    }
+    const sep = line.match(/[-–:|\/]/);
+    let periodo='Importado', desc=line;
+    if (sep) {
+      const idx=line.indexOf(sep[0]);
+      periodo=line.slice(0,idx).trim()||'Importado';
+      desc=line.slice(idx+1).trim()||line;
+    }
+    results.push({ periodo, desc, sev, cat:'Importado', ts:Date.now() });
+  });
+  if (!DB[nome]) DB[nome] = { cargo:'', errors:[] };
+  results.forEach(r => DB[nome].errors.push(r));
+  save();
+  renderSidebar();
+  const resultEl = document.getElementById('parse-result');
+  resultEl.style.display = 'block';
+  const counts = {baixa:0,media:0,alta:0,critica:0};
+  results.forEach(r=>counts[r.sev]++);
+  resultEl.innerHTML = `<div style="font-weight:700;margin-bottom:12px;color:var(--accent)">✓ ${results.length} erro${results.length!==1?'s':''} importado${results.length!==1?'s':''} para <em>${nome}</em></div>`
+    + results.map(r=>`<div class="parse-row"><div class="dot dot-${r.sev}"></div><div style="flex:1;font-size:12px;color:var(--text)">${r.desc}</div><span class="sev-pill sev-${r.sev}">${r.sev}</span></div>`).join('');
+  toast(`${results.length} erros importados!`, true);
+  document.getElementById('p-dados').value='';
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────
+function getTrend(erros) {
+  if (erros.length<2) return 'flat';
+  const h=Math.floor(erros.length/2);
+  const a1=erros.slice(0,h).reduce((s,e)=>s+SEV_W[e.sev],0)/h;
+  const a2=erros.slice(h).reduce((s,e)=>s+SEV_W[e.sev],0)/(erros.length-h);
+  if (a2-a1>0.3) return 'up';
+  if (a1-a2>0.3) return 'down';
+  return 'flat';
+}
+function getAvg(erros) {
+  if (!erros.length) return '0';
+  return (erros.reduce((s,e)=>s+SEV_W[e.sev],0)/erros.length).toFixed(1);
+}
+function trendInfo(t) {
+  return {
+    up:   {label:'Piorando',  cls:'trend-up',   icon:'↑'},
+    down: {label:'Melhorando',cls:'trend-down',  icon:'↓'},
+    flat: {label:'Estável',   cls:'trend-flat',  icon:'→'}
+  }[t];
+}
+function esc(s) { return s.replace(/'/g,"\\'"); }
+function toast(msg, ok) {
+  const t=document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show '+(ok?'toast-ok':'toast-err');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+renderPainel();
+</script>
+</body>
+</html>
