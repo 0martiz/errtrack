@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ErrTrack</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="login" class="login">
+    <div class="login-card">
+      <h1>ErrTrack</h1>
+      <p>Painel de erros e melhoria por colaborador.</p>
+      <label>Usuario
+        <input id="loginUser" autocomplete="username" placeholder="Ex.: Lucas.Martins">
+      </label>
+      <label>Senha
+        <input id="loginPass" type="password" autocomplete="current-password">
+      </label>
+      <button class="btn" id="loginBtn">Entrar</button>
+      <div id="loginError" class="error-message"></div>
+    </div>
+  </section>
+
+  <section id="app" class="app hidden">
+    <aside>
+      <div class="brand">ErrTrack</div>
+      <div class="user-box">
+        <strong id="currentUser"></strong>
+        <span id="currentRole"></span>
+      </div>
+      <nav>
+        <button data-view="dashboard" class="active">Painel geral</button>
+        <button data-view="people">Colaboradores</button>
+        <button data-view="errors">Registro de erros</button>
+        <button data-view="settings">Acessos</button>
+      </nav>
+      <button class="btn secondary" id="logoutBtn">Sair</button>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <h1 id="pageTitle">Painel geral</h1>
+          <p id="pageSubtitle">Comparacao semanal dos erros e da melhoria dos colaboradores.</p>
+        </div>
+      </div>
+
+      <section id="dashboardView" class="grid">
+        <div class="filters">
+          <label>Equipe
+            <select id="teamFilter"></select>
+          </label>
+          <label>Semana
+            <input id="weekFilter" type="week">
+          </label>
+          <label>Tipo de erro
+            <select id="typeFilter"></select>
+          </label>
+          <button class="btn secondary" id="clearFilters">Limpar filtros</button>
+        </div>
+        <div class="cards" id="metrics"></div>
+        <div class="two">
+          <div class="section">
+            <h2>Comparacao por colaborador</h2>
+            <div id="peopleTable"></div>
+          </div>
+          <div class="section">
+            <h2>Evolucao por tipo de erro</h2>
+            <div id="typeTable"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="peopleView" class="section hidden">
+        <h2>Colaboradores</h2>
+        <p>Visao individual com semana atual, semana anterior e dias sem erro.</p>
+        <div id="peopleCards"></div>
+      </section>
+
+      <section id="errorsView" class="two hidden">
+        <div class="section">
+          <h2>Novo registro</h2>
+          <form id="errorForm" class="form-grid">
+            <label>Data
+              <input id="errorDate" type="date" required>
+            </label>
+            <label>Colaborador
+              <select id="errorPerson" required></select>
+            </label>
+            <label>Tipo de erro
+              <select id="errorType" required></select>
+            </label>
+            <label>Impacto
+              <select id="errorImpact">
+                <option value="Baixo">Baixo</option>
+                <option value="Medio">Medio</option>
+                <option value="Alto">Alto</option>
+              </select>
+            </label>
+            <label class="full">Observacao
+              <textarea id="errorNote" placeholder="Descreva o erro ou contexto"></textarea>
+            </label>
+            <button class="btn" type="submit">Salvar erro</button>
+          </form>
+        </div>
+        <div class="section">
+          <h2>Ultimos erros</h2>
+          <div id="errorList"></div>
+        </div>
+      </section>
+
+      <section id="settingsView" class="section hidden">
+        <h2>Acessos configurados</h2>
+        <p>Supervisores entram como acesso. Funcionarios aparecem no comparativo.</p>
+        <div id="accessTable"></div>
+      </section>
+    </main>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>
