@@ -1,7 +1,7 @@
 services:
   - type: web
     name: errtrack-site
-    env: node
+    runtime: node
     plan: starter
     buildCommand: npm install
     startCommand: npm start
@@ -19,4 +19,4 @@ services:
 
 databases:
   - name: errtrack-db
-    plan: starter
+    plan: basic-256mb
