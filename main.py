@@ -32,11 +32,10 @@ app.add_middleware(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-app.mount("/css",    StaticFiles(directory=os.path.join(BASE_DIR, "front-end/css")), name="css")
-app.mount("/js",     StaticFiles(directory=os.path.join(BASE_DIR, "front-end/js")),  name="js")
-app.mount("/img",    StaticFiles(directory=os.path.join(BASE_DIR, "front-end/img")), name="img")
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "front-end")),     name="static")
-
+app.mount("/css",    StaticFiles(directory=os.path.join(BASE_DIR, "css")), name="css")
+app.mount("/js",     StaticFiles(directory=os.path.join(BASE_DIR, "js")),  name="js")
+app.mount("/img",    StaticFiles(directory=os.path.join(BASE_DIR, "img")), name="img")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "")),     name="static")
 # ── conexão com reconexão automática ─────────────────────────────────────────
 
 conexao = None
@@ -160,13 +159,13 @@ def exige_role(request: Request, roles_permitidas: list):
 
 @app.get("/")
 def serve_login():
-    return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
+    return FileResponse(os.path.join(BASE_DIR, "login.html"))
 
 @app.get("/sistema")
 def serve_sistema(request: Request):
     if not usuario_autenticado(request):
-        return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
-    return FileResponse(os.path.join(BASE_DIR, "front-end/errtrack-premium.html"))
+        return FileResponse(os.path.join(BASE_DIR, "login.html"))
+    return FileResponse(os.path.join(BASE_DIR, "errtrack-premium.html"))
 
 # ── login / logout ────────────────────────────────────────────────────────────
 
