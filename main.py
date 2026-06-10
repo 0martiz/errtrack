@@ -18,11 +18,12 @@ load_dotenv()
 SECRET_KEY         = os.environ.get("SECRET_KEY", "troca-isso-em-producao")
 ALGORITHM          = "HS256"
 TOKEN_EXPIRE_HORAS = 8
-IS_PROD            = os.environ.get("RENDER") == "true"   # Render define RENDER=true automaticamente
+IS_PROD            = os.environ.get("RENDER") == "true"
 
+# Permite localhost automaticamente para desenvolvimento local não quebrar
 ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
-    "https://errtrack.onrender.com"
+    "https://errtrack.onrender.com,http://localhost:8000,http://127.0.0.1:8000"
 ).split(",")
 
 app = FastAPI()
@@ -36,24 +37,22 @@ app.add_middleware(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONT_END_DIR = os.path.join(BASE_DIR, "front-end")
 
-# ── static files ──────────────────────────────────────────────────────────────
-# /static removido — /css, /js e /img já cobrem tudo sem conflito
-
-app.mount("/css", StaticFiles(directory=os.path.join(BASE_DIR, "front-end/css")), name="css")
-app.mount("/js",  StaticFiles(directory=os.path.join(BASE_DIR, "front-end/js")),  name="js")
-app.mount("/img", StaticFiles(directory=os.path.join(BASE_DIR, "front-end/img")), name="img")
+# ── arquivos estáticos ────────────────────────────────────────────────────────
+# Monta as pastas garantindo que o FastAPI saiba onde encontrar os arquivos
+if os.path.exists(os.path.join(FRONT_END_DIR, "css")):
+    app.mount("/css", StaticFiles(directory=os.path.join(FRONT_END_DIR, "css")), name="css")
+if os.path.exists(os.path.join(FRONT_END_DIR, "js")):
+    app.mount("/js",  StaticFiles(directory=os.path.join(FRONT_END_DIR, "js")),  name="js")
+if os.path.exists(os.path.join(FRONT_END_DIR, "img")):
+    app.mount("/img", StaticFiles(directory=os.path.join(FRONT_END_DIR, "img")), name="img")
 
 # ── conexão com reconexão automática ─────────────────────────────────────────
 
 conexao = None
 
 def get_cursor():
-    """
-    Retorna um cursor ativo.
-    Se a conexão estiver morta (timeout, restart do banco free tier),
-    fecha a conexão antiga e abre uma nova antes de devolver o cursor.
-    """
     global conexao
     try:
         if conexao is None or conexao.closed:
@@ -62,29 +61,38 @@ def get_cursor():
         cur.execute("SELECT 1")
         return cur
     except Exception:
-        # Fecha a conexão antiga para não vazar recursos
         if conexao is not None:
             try:
                 conexao.close()
             except Exception:
                 pass
-        conexao = psycopg2.connect(
-            os.environ["DATABASE_URL"],
-            connect_timeout=10
-        )
-        return conexao.cursor()
+        try:
+            # Captura a URL do banco do ambiente
+            db_url = os.environ.get("DATABASE_URL")
+            if not db_url:
+                raise ValueError("DATABASE_URL não configurada no ambiente.")
+            
+            conexao = psycopg2.connect(
+                db_url,
+                connect_timeout=10
+            )
+            return conexao.cursor()
+        except Exception as e:
+            print(f"Erro crítico ao conectar no banco de dados: {e}")
+            raise e
 
 def commit():
-    conexao.commit()
+    if conexao and not conexao.closed:
+        conexao.commit()
 
 # ── criação de tabelas via startup event ──────────────────────────────────────
-# FIX BUG 1: criatabela() estava sendo chamada no toplevel (linha solta).
-# Isso causava crash imediato se DATABASE_URL não estivesse disponível
-# no exato momento do import. Agora é executada apenas após o app estar pronto.
 
 @app.on_event("startup")
 def startup():
-    _criatabela()
+    try:
+        _criatabela()
+    except Exception as e:
+        print(f"Falha na criação inicial das tabelas: {e}")
 
 def _criatabela():
     cur = get_cursor()
@@ -99,16 +107,18 @@ def _criatabela():
     )""")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS login(
-        usuario TEXT PRIMARY KEY,
-        nome    TEXT,
-        senha   TEXT,
-        role    TEXT NOT NULL DEFAULT 'admin'
+        id             SERIAL PRIMARY KEY,
+        usuario        TEXT UNIQUE,
+        nome           TEXT,
+        senha          TEXT,
+        role           TEXT NOT NULL DEFAULT 'admin'
     )""")
-    # Migração segura: adiciona coluna role se a tabela já existia sem ela
     try:
         cur.execute("ALTER TABLE login ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
     except Exception:
-        conexao.rollback()
+        if conexao:
+            conexao.rollback()
+            
     cur.execute("""
     CREATE TABLE IF NOT EXISTS erros(
         id              SERIAL PRIMARY KEY,
@@ -132,7 +142,7 @@ class Funcionarios(BaseModel):
     classespecializacao:  str
     classperiodo:         str
     classcategoria:       str
-    classobservacoes:     str   # FIX BUG 7: era classobservações (com acento)
+    classobservacoes:     str 
 
 class Funcionario(BaseModel):
     nomefuncionario: str
@@ -162,7 +172,6 @@ def verificar_senha(senha: str, hash_salvo: str) -> bool:
     return bcrypt.checkpw(senha.encode(), hash_salvo.encode())
 
 def gerar_token(usuario: str, role: str) -> str:
-    # FIX BUG 6: datetime.utcnow() está deprecated no Python 3.12+
     expira = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HORAS)
     return jwt.encode({"sub": usuario, "role": role, "exp": expira}, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -187,45 +196,55 @@ def exige_role(request: Request, roles_permitidas: list):
 
 @app.get("/")
 def serve_login():
-    return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
+    path = os.path.join(FRONT_END_DIR, "login.html")
+    if os.path.exists(path):
+        return FileResponse(path)
+    return JSONResponse(content={"erro": "Arquivo login.html não encontrado no front-end"}, status_code=404)
 
 @app.get("/sistema")
 def serve_sistema(request: Request):
     if not usuario_autenticado(request):
-        return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
-    return FileResponse(os.path.join(BASE_DIR, "front-end/errtrack-premium.html"))
+        path_login = os.path.join(FRONT_END_DIR, "login.html")
+        return FileResponse(path_login) if os.path.exists(path_login) else JSONResponse(content={"mensagem": "Não autenticado"}, status_code=401)
+    
+    path_sistema = os.path.join(FRONT_END_DIR, "errtrack-premium.html")
+    if os.path.exists(path_sistema):
+        return FileResponse(path_sistema)
+    return JSONResponse(content={"erro": "Arquivo errtrack-premium.html não encontrado"}, status_code=404)
 
 # ── login / logout ────────────────────────────────────────────────────────────
 
 @app.post("/login")
 def verifica_usuario(login: Login):
-    cur = get_cursor()
-    cur.execute(
-        "SELECT senha, role FROM login WHERE usuario = %s",
-        (login.usuario,)
-    )
-    resultado = cur.fetchone()
-
-    if resultado and verificar_senha(login.senha, resultado[0]):
-        role  = resultado[1]
-        token = gerar_token(login.usuario, role)
-        response = JSONResponse(content={"status": "sucesso", "role": role})
-        # FIX BUG 4: adicionado samesite="lax" e secure condicional
-        # samesite="lax" funciona em HTTPS same-origin (Render) sem precisar de none
-        response.set_cookie(
-            key="errtrack_token",
-            value=token,
-            httponly=True,
-            max_age=TOKEN_EXPIRE_HORAS * 3600,
-            samesite="lax",
-            secure=IS_PROD,
+    try:
+        cur = get_cursor()
+        cur.execute(
+            "SELECT senha, role FROM login WHERE usuario = %s",
+            (login.usuario,)
         )
-        return response
+        resultado = cur.fetchone()
 
-    return JSONResponse(
-        content={"mensagem": "Usuário ou senha incorretos."},
-        status_code=401
-    )
+        if resultado and verificar_senha(login.senha, resultado[0]):
+            role  = resultado[1]
+            token = gerar_token(login.usuario, role)
+            response = JSONResponse(content={"status": "sucesso", "role": role})
+            
+            response.set_cookie(
+                key="errtrack_token",
+                value=token,
+                httponly=True,
+                max_age=TOKEN_EXPIRE_HORAS * 3600,
+                samesite="lax",
+                secure=IS_PROD,
+            )
+            return response
+
+        return JSONResponse(
+            content={"mensagem": "Usuário ou senha incorretos."},
+            status_code=401
+        )
+    except Exception as e:
+        return JSONResponse(content={"mensagem": "Erro interno no servidor de banco de dados."}, status_code=500)
 
 @app.post("/logout")
 def logout():
@@ -260,7 +279,7 @@ def cadastrar_funcionario(funcionarios: Funcionarios, request: Request):
             funcionarios.classespecializacao,
             funcionarios.classperiodo,
             funcionarios.classcategoria,
-            funcionarios.classobservacoes,   # FIX BUG 7: campo sem acento
+            funcionarios.classobservacoes,
         )
     )
     commit()
