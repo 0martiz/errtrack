@@ -1,4 +1,4 @@
-const API = "https://errtrack-uesv.onrender.com";
+const API = 'https://errtrack-45jm.onrender.com';
 
 // toggle tema
 const themeBtn = document.getElementById('theme-btn');
