@@ -193,7 +193,11 @@ def serve_login():
 def serve_sistema(request: Request):
     if not usuario_autenticado(request):
         return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
-    return FileResponse(os.path.join(BASE_DIR, "front-end/errtrack-premium.html"))
+    path = os.path.join(BASE_DIR, "front-end/errtrack-premium.html")
+    with open(path, "r") as f:
+        content = f.read().replace("/static/conectaapi.js", "/js/conectaapi.js")
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=content)
 
 # ── login / logout ────────────────────────────────────────────────────────────
 
