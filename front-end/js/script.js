@@ -325,7 +325,9 @@ const API = "https://errtrack-45jm.onrender.com";
 
   function initSync() {
     const btnExport = document.getElementById('btn-export-top');
-    if (btnExport) btnExport.addEventListener('click', async () => {
+   document.getElementById('btn-export-top').addEventListener('click', () => {
+  window.location.href = '/exportar-excel';
+});
       const dados = await apiFetch('/erros');
       if (!dados || !dados.erros.length) { showToast('Nenhum dado para exportar.', 'wn'); return; }
 
