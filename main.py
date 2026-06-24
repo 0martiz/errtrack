@@ -447,3 +447,41 @@ def criar_superadmin(login: Login):
     )
     commit()
     return {"status": "sucesso", "mensagem": f"Superadmin '{login.usuario}' criado com sucesso!"}
+
+from fastapi.responses import StreamingResponse
+import io
+
+@app.get("/exportar-excel")
+def exportar_excel(request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    
+    cur = get_cursor()
+    cur.execute("""
+        SELECT e.nomefuncionario, e.periodo, e.descricao, e.gravidade, e.categoria,
+               to_timestamp(e.ts) as data
+        FROM erros e ORDER BY e.ts DESC
+    """)
+    rows = cur.fetchall()
+    
+    # Gera CSV (abre no Excel)
+    output = io.StringIO()
+    output.write('\ufeff')  # BOM para Excel reconhecer UTF-8
+    output.write('Funcionário,Período,Descrição,Gravidade,Categoria,Data\n')
+    for r in rows:
+        linha = ','.join([
+            f'"{str(r[0] or "")}"',
+            f'"{str(r[1] or "")}"',
+            f'"{str(r[2] or "").replace(chr(34), chr(39))}"',
+            f'"{str(r[3] or "")}"',
+            f'"{str(r[4] or "")}"',
+            f'"{str(r[5] or "")}"',
+        ])
+        output.write(linha + '\n')
+    
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode('utf-8')),
+        media_type='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="errtrack_export.xlsx"'}
+    )
