@@ -95,8 +95,17 @@ def _criatabela():
         especializacao TEXT,
         periodo        VARCHAR(11),
         categoria      TEXT,
-        observacoes    TEXT
+        observacoes    TEXT,
+        pausa1         TEXT,
+        pausa2         TEXT,
+        pausa3         TEXT
     )""")
+    # Migração segura: adiciona colunas de pausa se a tabela já existia sem elas
+    for col in ("pausa1", "pausa2", "pausa3"):
+        try:
+            cur.execute(f"ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS {col} TEXT")
+        except Exception:
+            conexao.rollback()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS login(
         usuario TEXT PRIMARY KEY,
@@ -133,6 +142,9 @@ class Funcionarios(BaseModel):
     classperiodo:         str
     classcategoria:       str
     classobservacoes:     str   # FIX BUG 7: era classobservações (com acento)
+    classpausa1:          str = ""
+    classpausa2:          str = ""
+    classpausa3:          str = ""
 
 class Funcionario(BaseModel):
     nomefuncionario: str
@@ -140,6 +152,9 @@ class Funcionario(BaseModel):
     periodo:         str
     categoria:       str
     observacoes:     str
+    pausa1:          str = ""
+    pausa2:          str = ""
+    pausa3:          str = ""
 
 class Erro(BaseModel):
     nomefuncionario: str
@@ -258,13 +273,16 @@ def cadastrar_funcionario(funcionarios: Funcionarios, request: Request):
     if cur.fetchone():
         return {"mensagem": "Funcionário já cadastrado!"}
     cur.execute(
-        "INSERT INTO funcionarios(nomecompleto, especializacao, periodo, categoria, observacoes) VALUES(%s, %s, %s, %s, %s)",
+        "INSERT INTO funcionarios(nomecompleto, especializacao, periodo, categoria, observacoes, pausa1, pausa2, pausa3) VALUES(%s, %s, %s, %s, %s, %s, %s, %s)",
         (
             funcionarios.classnomefuncionario,
             funcionarios.classespecializacao,
             funcionarios.classperiodo,
             funcionarios.classcategoria,
             funcionarios.classobservacoes,   # FIX BUG 7: campo sem acento
+            funcionarios.classpausa1,
+            funcionarios.classpausa2,
+            funcionarios.classpausa3,
         )
     )
     commit()
@@ -275,19 +293,19 @@ def listar_funcionarios(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("SELECT id, nomecompleto, categoria FROM funcionarios ORDER BY categoria, nomecompleto")
+    cur.execute("SELECT id, nomecompleto, categoria, pausa1, pausa2, pausa3 FROM funcionarios ORDER BY categoria, nomecompleto")
     rows = cur.fetchall()
-    return {"funcionarios": [{"id": r[0], "nomecompleto": r[1], "categoria": r[2]} for r in rows]}
+    return {"funcionarios": [{"id": r[0], "nomecompleto": r[1], "categoria": r[2], "pausa1": r[3], "pausa2": r[4], "pausa3": r[5]} for r in rows]}
 
 @app.get("/funcionarios/{nome}")
 def buscar_funcionario(nome: str, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("SELECT id, nomecompleto, especializacao, periodo, categoria, observacoes FROM funcionarios WHERE nomecompleto = %s", (nome,))
+    cur.execute("SELECT id, nomecompleto, especializacao, periodo, categoria, observacoes, pausa1, pausa2, pausa3 FROM funcionarios WHERE nomecompleto = %s", (nome,))
     r = cur.fetchone()
     if r:
-        return {"funcionario": {"id": r[0], "nomecompleto": r[1], "especializacao": r[2], "periodo": r[3], "categoria": r[4], "observacoes": r[5]}}
+        return {"funcionario": {"id": r[0], "nomecompleto": r[1], "especializacao": r[2], "periodo": r[3], "categoria": r[4], "observacoes": r[5], "pausa1": r[6], "pausa2": r[7], "pausa3": r[8]}}
     return JSONResponse(content={"mensagem": "Funcionário não encontrado"}, status_code=404)
 
 @app.put("/funcionarios/{nome}")
@@ -297,12 +315,13 @@ def atualizar_funcionario(nome: str, funcionario: Funcionario, request: Request)
     cur = get_cursor()
     cur.execute("""
         UPDATE funcionarios
-        SET nomecompleto=%s, especializacao=%s, periodo=%s, categoria=%s, observacoes=%s
+        SET nomecompleto=%s, especializacao=%s, periodo=%s, categoria=%s, observacoes=%s, pausa1=%s, pausa2=%s, pausa3=%s
         WHERE nomecompleto=%s
     """, (
         funcionario.nomefuncionario, funcionario.especializacao,
         funcionario.periodo, funcionario.categoria,
-        funcionario.observacoes, nome
+        funcionario.observacoes, funcionario.pausa1, funcionario.pausa2, funcionario.pausa3,
+        nome
     ))
     commit()
     if cur.rowcount:
@@ -485,3 +504,87 @@ def exportar_excel(request: Request):
         media_type='text/csv',
         headers={'Content-Disposition': 'attachment; filename="errtrack_export.xlsx"'}
     )
+
+# ── importação de pausas via Excel ────────────────────────────────────────────
+from fastapi import UploadFile, File
+from openpyxl import load_workbook
+
+def _norm(s: str) -> str:
+    """Normaliza nome para comparação (sem acento, maiúsculas, sem espaços extras)."""
+    import unicodedata
+    s = (s or "").strip().upper()
+    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+    return " ".join(s.split())
+
+@app.post("/funcionarios/importar-pausas")
+async def importar_pausas(request: Request, arquivo: UploadFile = File(...)):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+
+    conteudo = await arquivo.read()
+    try:
+        wb = load_workbook(io.BytesIO(conteudo), data_only=True)
+    except Exception:
+        return JSONResponse(content={"mensagem": "Não foi possível ler o arquivo. Envie um .xlsx válido."}, status_code=400)
+
+    ws = wb.active
+
+    # Lê o cabeçalho da primeira linha para descobrir as colunas:
+    # esperado algo como: Nome | Pausa 1 | Pausa 2 | Pausa 3  (ordem flexível, nomes flexíveis)
+    headers = []
+    for cell in ws[1]:
+        headers.append(_norm(str(cell.value)) if cell.value else "")
+
+    def achar_coluna(possiveis):
+        for i, h in enumerate(headers):
+            if any(p in h for p in possiveis):
+                return i
+        return None
+
+    col_nome   = achar_coluna(["NOME"])
+    col_pausa1 = achar_coluna(["PAUSA 1", "PAUSA1", "ENTRADA"])
+    col_pausa2 = achar_coluna(["PAUSA 2", "PAUSA2", "MEIO"])
+    col_pausa3 = achar_coluna(["PAUSA 3", "PAUSA3", "SAIDA", "SAÍDA"])
+
+    if col_nome is None:
+        return JSONResponse(content={"mensagem": "Não encontrei a coluna 'Nome' na planilha."}, status_code=400)
+
+    cur = get_cursor()
+    cur.execute("SELECT nomecompleto FROM funcionarios")
+    nomes_cadastrados = {_norm(r[0]): r[0] for r in cur.fetchall()}
+
+    atualizados, nao_encontrados = [], []
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if col_nome >= len(row) or not row[col_nome]:
+            continue
+        nome_planilha = str(row[col_nome]).strip()
+        nome_chave = _norm(nome_planilha)
+        nome_real = nomes_cadastrados.get(nome_chave)
+
+        if not nome_real:
+            nao_encontrados.append(nome_planilha)
+            continue
+
+        def valor(col):
+            if col is None or col >= len(row) or row[col] is None:
+                return ""
+            v = row[col]
+            return v.strftime("%H:%M") if hasattr(v, "strftime") else str(v).strip()
+
+        p1, p2, p3 = valor(col_pausa1), valor(col_pausa2), valor(col_pausa3)
+
+        cur.execute(
+            "UPDATE funcionarios SET pausa1=%s, pausa2=%s, pausa3=%s WHERE nomecompleto=%s",
+            (p1, p2, p3, nome_real)
+        )
+        atualizados.append(nome_real)
+
+    commit()
+
+    return {
+        "status": "sucesso",
+        "mensagem": f"{len(atualizados)} funcionário(s) atualizado(s).",
+        "atualizados": atualizados,
+        "nao_encontrados": nao_encontrados
+    }
