@@ -172,6 +172,29 @@
 
     renderChart(erros);
     renderErrList(nome, erros);
+    renderPausas(nome);
+  }
+
+  async function renderPausas(nome) {
+    const wrap = document.getElementById('d-pausas-wrap');
+    const span = document.getElementById('d-pausas');
+    if (!wrap || !span) return;
+    try {
+      const dados = await apiFetch('/funcionarios/' + encodeURIComponent(nome));
+      const f = dados && dados.funcionario;
+      const partes = [];
+      if (f && f.pausa1) partes.push('1ª ' + f.pausa1);
+      if (f && f.pausa2) partes.push('2ª ' + f.pausa2);
+      if (f && f.pausa3) partes.push('3ª ' + f.pausa3);
+      if (partes.length) {
+        span.textContent = partes.join('  ·  ');
+        wrap.style.display = 'block';
+      } else {
+        wrap.style.display = 'none';
+      }
+    } catch {
+      wrap.style.display = 'none';
+    }
   }
 
   function renderChart(erros) {
