@@ -17,6 +17,9 @@ async function pegaFuncionario() {
     const periodo    = document.getElementById('periodotrabalho').value;
     const categoria  = document.getElementById('categoria').value;
     const observacao = document.getElementById('observacoes').value.trim();
+    const pausa1     = document.getElementById('pausa1').value.trim();
+    const pausa2     = document.getElementById('pausa2').value.trim();
+    const pausa3     = document.getElementById('pausa3').value.trim();
     const msgEl      = document.getElementById('save-msg-func');
 
     if (!nome) {
@@ -33,7 +36,10 @@ async function pegaFuncionario() {
                 classespecializacao:  espec,
                 classperiodo:         periodo,
                 classcategoria:       categoria,
-                classobservacoes:   observacao
+                classobservacoes:   observacao,
+                classpausa1:        pausa1,
+                classpausa2:        pausa2,
+                classpausa3:        pausa3
             })
         });
 
@@ -43,6 +49,9 @@ async function pegaFuncionario() {
             document.getElementById('funcionarionome').value = '';
             document.getElementById('especializacao').value  = '';
             document.getElementById('observacoes').value     = '';
+            document.getElementById('pausa1').value          = '';
+            document.getElementById('pausa2').value          = '';
+            document.getElementById('pausa3').value          = '';
             carregarFuncionarios();
         } else {
             msgEl.style.color = 'red';
@@ -74,6 +83,9 @@ async function buscarFuncionario() {
         document.getElementById('edit-periodo').value = f.periodo;
         document.getElementById('edit-cat').value     = f.categoria;
         document.getElementById('edit-obs').value     = f.observacoes;
+        document.getElementById('edit-pausa1').value  = f.pausa1 || '';
+        document.getElementById('edit-pausa2').value  = f.pausa2 || '';
+        document.getElementById('edit-pausa3').value  = f.pausa3 || '';
         document.getElementById('form-edicao').style.display = 'block';
     } catch {
         alert('Erro ao conectar ao servidor.');
@@ -86,7 +98,10 @@ async function salvarEdicao() {
         especializacao:  document.getElementById('edit-espec').value,
         periodo:         document.getElementById('edit-periodo').value,
         categoria:       document.getElementById('edit-cat').value,
-        observacoes:     document.getElementById('edit-obs').value
+        observacoes:     document.getElementById('edit-obs').value,
+        pausa1:          document.getElementById('edit-pausa1').value.trim(),
+        pausa2:          document.getElementById('edit-pausa2').value.trim(),
+        pausa3:          document.getElementById('edit-pausa3').value.trim()
     };
     try {
         const dados = await apiFetch('/funcionarios/' + encodeURIComponent(window._nomeOriginal), {
@@ -100,6 +115,48 @@ async function salvarEdicao() {
         if (dados.status === 'sucesso') carregarFuncionarios();
     } catch {
         alert('Erro ao salvar.');
+    }
+}
+
+// ── importar pausas via Excel ───────────────────────────────────────────────
+async function importarPausas() {
+    const input = document.getElementById('arquivo-pausas');
+    const msgEl = document.getElementById('msg-import-pausas');
+    if (!input.files.length) {
+        msgEl.style.color = 'red';
+        msgEl.textContent = 'Selecione um arquivo .xlsx primeiro.';
+        return;
+    }
+    const formData = new FormData();
+    formData.append('arquivo', input.files[0]);
+
+    msgEl.style.color = '#888';
+    msgEl.textContent = 'Importando...';
+
+    try {
+        const res = await fetch(API + '/funcionarios/importar-pausas', {
+            method: 'POST',
+            credentials: 'include',
+            body: formData
+        });
+        const dados = await res.json();
+
+        if (dados.status === 'sucesso') {
+            msgEl.style.color = 'green';
+            let txt = dados.mensagem;
+            if (dados.nao_encontrados && dados.nao_encontrados.length) {
+                txt += ' Não encontrados: ' + dados.nao_encontrados.join(', ');
+            }
+            msgEl.textContent = txt;
+            input.value = '';
+            carregarFuncionarios();
+        } else {
+            msgEl.style.color = 'red';
+            msgEl.textContent = dados.mensagem || 'Erro ao importar.';
+        }
+    } catch {
+        msgEl.style.color = 'red';
+        msgEl.textContent = 'Erro ao conectar ao servidor.';
     }
 }
 
