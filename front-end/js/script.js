@@ -1,3 +1,5 @@
+
+Errtrack premium · HTML
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -79,14 +81,259 @@
   </style>
 </head>
 <body>
-
+  <script>
+(async function initRole() {
+  try {
+    const res = await fetch('/me', { credentials: 'include' });
+    if (res.status === 401) { window.location.href = '/'; return; }
+    const dados = await res.json();
+    window._role = dados.role;
+    window._usuario = dados.usuario;
+    const btnAdmins = document.getElementById('btn-nav-admins');
+    if (dados.role === 'superadmin' || dados.role === 'admin_full') btnAdmins.style.display = 'flex';
+    if (dados.role !== 'superadmin') document.getElementById('toggle-full-wrap').style.display = 'none';
+  } catch(e) {}
+})();
+ 
+async function _apiFetch(path, options = {}) {
+  const res = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json',...(options.headers||{})}, ...options });
+  if (res.status === 401) { window.location.href = '/'; return null; }
+  return res.json();
+}
+ 
+const SEV_W = {baixa:1,media:2,alta:3,critica:4};
+const AVATAR_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
+let _dashFilter='all', _chartPeriod=7, _donutChart=null, _lineChart=null, _allErrors=[], _allWorkers=[];
+ 
+async function loadDashData() {
+  try {
+    const [er,wr] = await Promise.all([fetch('/erros',{credentials:'include'}),fetch('/funcionarios',{credentials:'include'})]);
+    const ed=await er.json(); const wd=await wr.json();
+    _allErrors=ed.erros||[]; _allWorkers=wd.funcionarios||[];
+  } catch(e) {}
+}
+ 
+function getWorkerStats() {
+  const stats={};
+  _allWorkers.forEach(w=>{stats[w.nomecompleto]={nome:w.nomecompleto,categoria:w.categoria,erros:[]}});
+  _allErrors.forEach(e=>{
+    if(!stats[e.nomefuncionario]) stats[e.nomefuncionario]={nome:e.nomefuncionario,categoria:e.cat_func||e.categoria||'',erros:[]};
+    stats[e.nomefuncionario].erros.push(e);
+  });
+  return Object.values(stats).map(w=>{
+    const erros=w.erros, total=erros.length;
+    const criticos=erros.filter(e=>e.gravidade==='critica').length;
+    const avg=total?(erros.reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/total).toFixed(1):'0.0';
+    const trend=calcTrend(erros);
+    return {...w,total,criticos,avg:parseFloat(avg),trend};
+  });
+}
+ 
+function calcTrend(erros) {
+  if(erros.length<2) return 'estavel';
+  const h=Math.floor(erros.length/2);
+  const a1=erros.slice(0,h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/h;
+  const a2=erros.slice(h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/(erros.length-h);
+  const d=a2-a1;
+  if(d>0.3) return 'piora';
+  if(d<-0.3) return 'melhora';
+  return 'estavel';
+}
+ 
+function updateKPIs(workers) {
+  const total=_allErrors.length, crit=_allErrors.filter(e=>e.gravidade==='critica').length;
+  const melh=workers.filter(w=>w.trend==='melhora').length, piora=workers.filter(w=>w.trend==='piora').length;
+  const n=workers.length||1;
+  document.getElementById('kv-total').textContent=total;
+  document.getElementById('kv-critica').textContent=crit;
+  document.getElementById('kv-critica-pct').textContent=total?`${((crit/total)*100).toFixed(1)}% do total`:'0% do total';
+  document.getElementById('kv-melhora').textContent=melh;
+  document.getElementById('kv-melhora-pct').textContent=`${Math.round((melh/n)*100)}% da equipe`;
+  document.getElementById('kv-piora').textContent=piora;
+  document.getElementById('kv-piora-pct').textContent=`${Math.round((piora/n)*100)}% da equipe`;
+}
+ 
+function setDashFilter(type) {
+  _dashFilter=type;
+  const map={all:'kpi-all',critica:'kpi-critica',piora:'kpi-piora',melhora:'kpi-melhora'};
+  const cls={all:'kpi-active',critica:'kpi-active-rd',piora:'kpi-active-or',melhora:'kpi-active-gn'};
+  Object.keys(map).forEach(k=>{
+    const el=document.getElementById(map[k]); if(!el) return;
+    el.classList.remove('kpi-active','kpi-active-rd','kpi-active-gn','kpi-active-or');
+    if(k===type) el.classList.add(cls[k]);
+  });
+  renderDashCards();
+}
+ 
+function renderDashCards() {
+  const search=(document.getElementById('dash-search')?.value||'').toLowerCase();
+  const sort=document.getElementById('dash-sort')?.value||'erros';
+  let workers=getWorkerStats();
+  if(_dashFilter==='critica') workers=workers.filter(w=>w.criticos>0);
+  else if(_dashFilter==='melhora') workers=workers.filter(w=>w.trend==='melhora');
+  else if(_dashFilter==='piora') workers=workers.filter(w=>w.trend==='piora');
+  if(search) workers=workers.filter(w=>w.nome.toLowerCase().includes(search));
+  if(sort==='erros') workers.sort((a,b)=>b.total-a.total);
+  else if(sort==='nome') workers.sort((a,b)=>a.nome.localeCompare(b.nome));
+  else if(sort==='criticos') workers.sort((a,b)=>b.criticos-a.criticos);
+  else if(sort==='media') workers.sort((a,b)=>b.avg-a.avg);
+  const master=workers.filter(w=>w.categoria==='Master');
+  const multi=workers.filter(w=>w.categoria==='MultiSkill');
+  const maxE=Math.max(...workers.map(w=>w.total),1);
+  const rankedAll=[...workers].sort((a,b)=>b.total-a.total);
+  const rankMap={}; rankedAll.forEach((w,i)=>{rankMap[w.nome]=i});
+  const gridM=document.getElementById('emp-grid-master');
+  const gridMu=document.getElementById('emp-grid-multiskill');
+  const empty=document.getElementById('emp-empty');
+  const lblM=document.getElementById('lbl-master');
+  const lblMu=document.getElementById('lbl-multi');
+  if(!workers.length){gridM.innerHTML='';gridMu.innerHTML='';empty.style.display='block';lblM.style.display='none';lblMu.style.display='none';return;}
+  empty.style.display='none';
+  lblM.style.display=master.length?'':'none';
+  lblMu.style.display=multi.length?'':'none';
+  gridM.innerHTML=master.map(w=>renderOpCard(w,rankMap,maxE)).join('');
+  gridMu.innerHTML=multi.map(w=>renderOpCard(w,rankMap,maxE)).join('');
+  document.querySelectorAll('[data-emp-card]').forEach(card=>{
+    card.addEventListener('click',function(){openDetail(decodeURIComponent(this.dataset.empCard));});
+  });
+}
+ 
+function renderOpCard(w,rankMap,maxE) {
+  const rank=rankMap[w.nome]??99;
+  const rankClass=rank===0?'op-rank-1':rank===1?'op-rank-2':rank===2?'op-rank-3':'op-rank-n';
+  const rankBadge=rank===0?'🥇 Melhor desempenho':rank===1?'🥈 Segundo melhor':rank===2?'🥉 Terceiro melhor':'';
+  const cidx=Math.abs((w.nome.charCodeAt(0)||0))%AVATAR_COLORS.length;
+  const initials=w.nome.split(' ').slice(0,2).map(n=>n[0]||'').join('').toUpperCase();
+  const barPct=Math.round((w.total/maxE)*100);
+  const barColor=w.criticos>0?'#ef4444':w.trend==='melhora'?'#22c55e':w.trend==='piora'?'#f97316':'#3b82f6';
+  const trendMap={melhora:{label:'↑ Melhorando',cls:'t-dn'},piora:{label:'↓ Piorando',cls:'t-up'},estavel:{label:'→ Estável',cls:'t-fl'}};
+  const tr=trendMap[w.trend]||trendMap.estavel;
+  return `<div class="ec" data-emp-card="${encodeURIComponent(w.nome)}" style="cursor:pointer">
+    <div class="ec-stripe"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div class="op-rank ${rankClass}">${rank+1}</div>
+      <div class="op-avatar" style="background:${AVATAR_COLORS[cidx]}">${initials}</div>
+      <div style="flex:1;min-width:0">
+        <div class="ec-n" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${w.nome}</div>
+        <div class="ec-m">${w.categoria||'—'}</div>
+      </div>
+      <span class="tb ${tr.cls}">${tr.label}</span>
+    </div>
+    <div class="ec-s">
+      <div class="es"><div class="esv">${w.total}</div><div class="esl">Total</div></div>
+      <div class="es"><div class="esv" style="${w.criticos>0?'color:var(--rd)':''}">${w.criticos}</div><div class="esl">Críticos</div></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);font-family:var(--mo);margin-bottom:4px">
+      <span>Média grav.</span><span>${w.avg}</span>
+    </div>
+    <div class="op-perf-bar"><div class="op-perf-fill" style="width:${barPct}%;background:${barColor}"></div></div>
+    ${rankBadge?`<div class="op-badge-txt">${rankBadge}</div>`:''}
+  </div>`;
+}
+ 
+function updateDonut() {
+  const workers=getWorkerStats();
+  const melh=workers.filter(w=>w.trend==='melhora').length;
+  const piora=workers.filter(w=>w.trend==='piora').length;
+  const crit=workers.filter(w=>w.criticos>0).length;
+  const est=Math.max(workers.length-melh-piora,0);
+  const total=workers.length;
+  document.getElementById('donut-total-num').textContent=total;
+  const data=[{label:'Melhorando',val:melh,color:'#22c55e'},{label:'Estável',val:est,color:'#3b82f6'},{label:'Piorando',val:piora,color:'#f97316'},{label:'Críticos',val:crit,color:'#ef4444'}];
+  document.getElementById('donut-legend').innerHTML=data.map(d=>`<div class="dl-item"><div class="dl-dot" style="background:${d.color}"></div><div class="dl-label">${d.label}</div><div class="dl-val">${d.val}</div><div class="dl-pct">${total?Math.round((d.val/total)*100):0}%</div></div>`).join('');
+  if(_donutChart) _donutChart.destroy();
+  const ctx=document.getElementById('donut-chart').getContext('2d');
+  _donutChart=new Chart(ctx,{type:'doughnut',data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.val||0.001),backgroundColor:data.map(d=>d.color),borderColor:'#111827',borderWidth:3,hoverBorderWidth:4,hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.12)',borderWidth:1,padding:10,callbacks:{label:c=>` ${c.label}: ${c.raw===0.001?0:c.raw} operadores`}}},animation:{animateRotate:true,duration:700}}});
+}
+ 
+function setChartPeriod(days,btn) {
+  _chartPeriod=days;
+  document.querySelectorAll('.ppill').forEach(p=>p.classList.remove('on'));
+  btn.classList.add('on');
+  updateLineChart();
+}
+ 
+function updateLineChart() {
+  const now=new Date(), labels=[], totals=[], critics=[];
+  for(let i=_chartPeriod-1;i>=0;i--) {
+    const d=new Date(now); d.setDate(d.getDate()-i);
+    labels.push(d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}));
+    const ds=new Date(d); ds.setHours(0,0,0,0);
+    const de=new Date(d); de.setHours(23,59,59,999);
+    const day=_allErrors.filter(e=>{const t=new Date(e.ts*1000);return t>=ds&&t<=de});
+    totals.push(day.length); critics.push(day.filter(e=>e.gravidade==='critica').length);
+  }
+  if(_lineChart) _lineChart.destroy();
+  const ctx=document.getElementById('line-chart').getContext('2d');
+  const gP=ctx.createLinearGradient(0,0,0,185); gP.addColorStop(0,'rgba(139,92,246,.25)'); gP.addColorStop(1,'rgba(139,92,246,0)');
+  const gR=ctx.createLinearGradient(0,0,0,185); gR.addColorStop(0,'rgba(239,68,68,.18)'); gR.addColorStop(1,'rgba(239,68,68,0)');
+  _lineChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Total de erros',data:totals,borderColor:'#8b5cf6',backgroundColor:gP,borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#8b5cf6',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true},{label:'Erros críticos',data:critics,borderColor:'#ef4444',backgroundColor:gR,borderWidth:2,pointRadius:4,pointBackgroundColor:'#ef4444',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10},boxWidth:8,padding:14}},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,padding:10}},scales:{x:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false}},y:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false},beginAtZero:true}},animation:{duration:500}}});
+}
+ 
+async function refreshDashboard() {
+  await loadDashData();
+  const workers=getWorkerStats();
+  updateKPIs(workers); updateDonut(); updateLineChart(); renderDashCards();
+}
+ 
+document.getElementById('btn-refresh-dash')?.addEventListener('click',async()=>{await refreshDashboard();showToast('Dados atualizados!','ok');});
+document.addEventListener('DOMContentLoaded',()=>{setTimeout(refreshDashboard,400);});
+ 
+async function criarAdmin() {
+  const usuario=document.getElementById('adm-usuario').value.trim();
+  const senha=document.getElementById('adm-senha').value;
+  const podeCriar=document.getElementById('adm-pode-criar').checked;
+  const msgEl=document.getElementById('msg-adm-criar');
+  if(!usuario||!senha){msgEl.style.color='var(--rd)';msgEl.textContent='Preencha usuário e senha.';return}
+  try {
+    const dados=await _apiFetch('/admins',{method:'POST',body:JSON.stringify({usuario,senha,pode_criar_admins:podeCriar})});
+    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;document.getElementById('adm-usuario').value='';document.getElementById('adm-senha').value='';document.getElementById('adm-pode-criar').checked=false;carregarAdmins();}
+    else{msgEl.style.color='var(--rd)';msgEl.textContent=(dados&&dados.mensagem)||'Erro ao criar admin.'}
+  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar ao servidor.'}
+  setTimeout(()=>{msgEl.textContent=''},4000);
+}
+ 
+async function deletarAdmin(usuario) {
+  if(!confirm('Remover o admin "'+usuario+'"?')) return;
+  const msgEl=document.getElementById('msg-adm-del');
+  try {
+    const dados=await _apiFetch('/admins/'+encodeURIComponent(usuario),{method:'DELETE'});
+    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;carregarAdmins();}
+    else{msgEl.style.color='var(--rd)';msgEl.textContent=dados?dados.mensagem:'Erro.'}
+  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar.'}
+  setTimeout(()=>{msgEl.textContent=''},4000);
+}
+ 
+async function carregarAdmins() {
+  try {
+    const dados=await _apiFetch('/admins');
+    const tbody=document.getElementById('adm-tbody');
+    const thAcao=document.getElementById('th-acao');
+    const isSA=window._role==='superadmin';
+    if(isSA) thAcao.style.display='';
+    tbody.innerHTML='';
+    (dados.admins||[]).forEach(a=>{
+      const tr=document.createElement('tr');
+      const isMe=a.usuario===window._usuario;
+      const podeEx=isSA&&a.role!=='superadmin'&&!isMe;
+      tr.innerHTML=`<td>${a.usuario}${isMe?' <span style="font-size:10px;color:var(--mt)">(você)</span>':''}</td><td><span class="role-pill role-${a.role}">${a.role}</span></td>${isSA?`<td>${podeEx?`<button class="btn b-rd" style="padding:4px 12px;font-size:11px" onclick="deletarAdmin('${a.usuario}')">Remover</button>`:'—'}</td>`:''}`;
+      tbody.appendChild(tr);
+    });
+  } catch{console.error('Erro ao carregar admins.')}
+}
+ 
+document.getElementById('btn-nav-admins')?.addEventListener('click',carregarAdmins);
+</script>
+</body>
+</html>
+ 
 <button class="mobile-menu-btn" id="mobile-menu">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
     <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
   </svg>
 </button>
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
-
+ 
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="logo">
@@ -117,9 +364,9 @@
     </button>
     <hr class="sb-sep">
   </aside>
-
+ 
   <main class="main">
-
+ 
     <!-- PAINEL GERAL -->
     <div id="pg-painel" class="pg on">
       <div id="pn-list">
@@ -133,7 +380,7 @@
             <button class="btn b-gn" id="btn-export-top">⬇ Exportar Relatório</button>
           </div>
         </div>
-
+ 
         <div class="kpi-row" style="margin-bottom:20px">
           <div class="kpi k-ac" id="kpi-all" onclick="setDashFilter('all')">
             <div class="kl">Total de Erros</div>
@@ -156,7 +403,7 @@
             <div class="ps" id="kv-melhora-pct" style="margin-top:6px">operadores</div>
           </div>
         </div>
-
+ 
         <div class="charts-row">
           <div class="chart-card">
             <div class="chart-card-title">Distribuição dos Operadores</div>
@@ -185,7 +432,7 @@
             <div class="line-canvas-wrap"><canvas id="line-chart"></canvas></div>
           </div>
         </div>
-
+ 
         <div class="filter-row">
           <div class="filter-left">
             <div class="el-ttl" style="margin:0">Desempenho dos Operadores</div>
@@ -193,18 +440,7 @@
           <div class="filter-right">
             <div class="search-wrap">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                class="search-input"
-                id="dash-search"
-                name="dash-search-operador"
-                placeholder="Buscar operador..."
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                data-lpignore="true"
-                data-1p-ignore="true"
-                oninput="renderDashCards()">
+              <input class="search-input" id="dash-search" placeholder="Buscar operador..." oninput="renderDashCards()">
             </div>
             <select class="sort-select" id="dash-sort" onchange="renderDashCards()">
               <option value="erros">Mais erros</option>
@@ -214,7 +450,7 @@
             </select>
           </div>
         </div>
-
+ 
         <div class="el-ttl" id="lbl-master" style="margin-top:6px">Master</div>
         <div class="eg" id="emp-grid-master"></div>
         <div class="el-ttl" style="margin-top:20px" id="lbl-multi">MultiSkill</div>
@@ -225,7 +461,7 @@
           <p>Registre o primeiro erro para começar a monitorar.</p>
         </div>
       </div>
-
+ 
       <div id="pn-detail" style="display:none">
         <button class="bk" id="btn-back">← Voltar ao painel</button>
         <div class="ph">
@@ -252,7 +488,7 @@
         <div class="el" id="err-list"></div>
       </div>
     </div>
-
+ 
     <!-- FUNCIONÁRIOS -->
     <div id="pg-funcionarios" class="pg">
       <div class="ph"><div><div class="pt">Cadastro de Funcionário</div><div class="ps">adicione um novo operador ao sistema</div></div></div>
@@ -343,7 +579,7 @@
         </div>
       </div>
     </div>
-
+ 
     <!-- REGISTRAR ERRO -->
     <div id="pg-registrar" class="pg">
       <div class="ph"><div><div class="pt">Registrar Erro</div><div class="ps">adicione um novo registro manualmente</div></div></div>
@@ -366,7 +602,7 @@
         <div class="sm" id="save-msg-error"></div>
       </div>
     </div>
-
+ 
     <!-- GESTÃO DE ADMINS -->
     <div id="pg-admins" class="pg">
       <div class="ph"><div><div class="pt">Gestão de Admins <span class="sa-badge">SUPER</span></div><div class="ps">gerencie quem tem acesso ao sistema</div></div></div>
@@ -392,258 +628,12 @@
         <div class="sm" id="msg-adm-del"></div>
       </div>
     </div>
-
+ 
   </main>
 </div>
-
+ 
 <div class="toast" id="toast"></div>
 <button class="theme-btn" id="theme-btn" title="Alternar tema">🌙</button>
-
-<script>
-(async function initRole() {
-  try {
-    const res = await fetch('/me', { credentials: 'include' });
-    if (res.status === 401) { window.location.href = '/'; return; }
-    const dados = await res.json();
-    window._role = dados.role;
-    window._usuario = dados.usuario;
-    const btnAdmins = document.getElementById('btn-nav-admins');
-    if (dados.role === 'superadmin' || dados.role === 'admin_full') btnAdmins.style.display = 'flex';
-    if (dados.role !== 'superadmin') document.getElementById('toggle-full-wrap').style.display = 'none';
-  } catch(e) {}
-})();
-
-async function _apiFetch(path, options = {}) {
-  const res = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json',...(options.headers||{})}, ...options });
-  if (res.status === 401) { window.location.href = '/'; return null; }
-  return res.json();
-}
-
-const SEV_W = {baixa:1,media:2,alta:3,critica:4};
-const AVATAR_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
-let _dashFilter='all', _chartPeriod=7, _donutChart=null, _lineChart=null, _allErrors=[], _allWorkers=[];
-
-async function loadDashData() {
-  try {
-    const [er,wr] = await Promise.all([fetch('/erros',{credentials:'include'}),fetch('/funcionarios',{credentials:'include'})]);
-    const ed=await er.json(); const wd=await wr.json();
-    _allErrors=ed.erros||[]; _allWorkers=wd.funcionarios||[];
-  } catch(e) {}
-}
-
-function getWorkerStats() {
-  const stats={};
-  _allWorkers.forEach(w=>{stats[w.nomecompleto]={nome:w.nomecompleto,categoria:w.categoria,erros:[]}});
-  _allErrors.forEach(e=>{
-    if(!stats[e.nomefuncionario]) stats[e.nomefuncionario]={nome:e.nomefuncionario,categoria:e.cat_func||e.categoria||'',erros:[]};
-    stats[e.nomefuncionario].erros.push(e);
-  });
-  return Object.values(stats).map(w=>{
-    const erros=w.erros, total=erros.length;
-    const criticos=erros.filter(e=>e.gravidade==='critica').length;
-    const avg=total?(erros.reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/total).toFixed(1):'0.0';
-    const trend=calcTrend(erros);
-    return {...w,total,criticos,avg:parseFloat(avg),trend};
-  });
-}
-
-function calcTrend(erros) {
-  if(erros.length<2) return 'estavel';
-  const h=Math.floor(erros.length/2);
-  const a1=erros.slice(0,h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/h;
-  const a2=erros.slice(h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/(erros.length-h);
-  const d=a2-a1;
-  if(d>0.3) return 'piora';
-  if(d<-0.3) return 'melhora';
-  return 'estavel';
-}
-
-function updateKPIs(workers) {
-  const total=_allErrors.length, crit=_allErrors.filter(e=>e.gravidade==='critica').length;
-  const melh=workers.filter(w=>w.trend==='melhora').length, piora=workers.filter(w=>w.trend==='piora').length;
-  const n=workers.length||1;
-  document.getElementById('kv-total').textContent=total;
-  document.getElementById('kv-critica').textContent=crit;
-  document.getElementById('kv-critica-pct').textContent=total?`${((crit/total)*100).toFixed(1)}% do total`:'0% do total';
-  document.getElementById('kv-melhora').textContent=melh;
-  document.getElementById('kv-melhora-pct').textContent=`${Math.round((melh/n)*100)}% da equipe`;
-  document.getElementById('kv-piora').textContent=piora;
-  document.getElementById('kv-piora-pct').textContent=`${Math.round((piora/n)*100)}% da equipe`;
-}
-
-function setDashFilter(type) {
-  _dashFilter=type;
-  const map={all:'kpi-all',critica:'kpi-critica',piora:'kpi-piora',melhora:'kpi-melhora'};
-  const cls={all:'kpi-active',critica:'kpi-active-rd',piora:'kpi-active-or',melhora:'kpi-active-gn'};
-  Object.keys(map).forEach(k=>{
-    const el=document.getElementById(map[k]); if(!el) return;
-    el.classList.remove('kpi-active','kpi-active-rd','kpi-active-gn','kpi-active-or');
-    if(k===type) el.classList.add(cls[k]);
-  });
-  renderDashCards();
-}
-
-function renderDashCards() {
-  const search=(document.getElementById('dash-search')?.value||'').toLowerCase();
-  const sort=document.getElementById('dash-sort')?.value||'erros';
-  let workers=getWorkerStats();
-  if(_dashFilter==='critica') workers=workers.filter(w=>w.criticos>0);
-  else if(_dashFilter==='melhora') workers=workers.filter(w=>w.trend==='melhora');
-  else if(_dashFilter==='piora') workers=workers.filter(w=>w.trend==='piora');
-  if(search) workers=workers.filter(w=>w.nome.toLowerCase().includes(search));
-  if(sort==='erros') workers.sort((a,b)=>b.total-a.total);
-  else if(sort==='nome') workers.sort((a,b)=>a.nome.localeCompare(b.nome));
-  else if(sort==='criticos') workers.sort((a,b)=>b.criticos-a.criticos);
-  else if(sort==='media') workers.sort((a,b)=>b.avg-a.avg);
-  const master=workers.filter(w=>w.categoria==='Master');
-  const multi=workers.filter(w=>w.categoria==='MultiSkill');
-  const maxE=Math.max(...workers.map(w=>w.total),1);
-  const rankedAll=[...workers].sort((a,b)=>b.total-a.total);
-  const rankMap={}; rankedAll.forEach((w,i)=>{rankMap[w.nome]=i});
-  const gridM=document.getElementById('emp-grid-master');
-  const gridMu=document.getElementById('emp-grid-multiskill');
-  const empty=document.getElementById('emp-empty');
-  const lblM=document.getElementById('lbl-master');
-  const lblMu=document.getElementById('lbl-multi');
-  if(!workers.length){gridM.innerHTML='';gridMu.innerHTML='';empty.style.display='block';lblM.style.display='none';lblMu.style.display='none';return;}
-  empty.style.display='none';
-  lblM.style.display=master.length?'':'none';
-  lblMu.style.display=multi.length?'':'none';
-  gridM.innerHTML=master.map(w=>renderOpCard(w,rankMap,maxE)).join('');
-  gridMu.innerHTML=multi.map(w=>renderOpCard(w,rankMap,maxE)).join('');
-  document.querySelectorAll('[data-emp-card]').forEach(card=>{
-    card.addEventListener('click',function(){openDetail(decodeURIComponent(this.dataset.empCard));});
-  });
-}
-
-function renderOpCard(w,rankMap,maxE) {
-  const rank=rankMap[w.nome]??99;
-  const rankClass=rank===0?'op-rank-1':rank===1?'op-rank-2':rank===2?'op-rank-3':'op-rank-n';
-  const rankBadge=rank===0?'🥇 Melhor desempenho':rank===1?'🥈 Segundo melhor':rank===2?'🥉 Terceiro melhor':'';
-  const cidx=Math.abs((w.nome.charCodeAt(0)||0))%AVATAR_COLORS.length;
-  const initials=w.nome.split(' ').slice(0,2).map(n=>n[0]||'').join('').toUpperCase();
-  const barPct=Math.round((w.total/maxE)*100);
-  const barColor=w.criticos>0?'#ef4444':w.trend==='melhora'?'#22c55e':w.trend==='piora'?'#f97316':'#3b82f6';
-  const trendMap={melhora:{label:'↑ Melhorando',cls:'t-dn'},piora:{label:'↓ Piorando',cls:'t-up'},estavel:{label:'→ Estável',cls:'t-fl'}};
-  const tr=trendMap[w.trend]||trendMap.estavel;
-  return `<div class="ec" data-emp-card="${encodeURIComponent(w.nome)}" style="cursor:pointer">
-    <div class="ec-stripe"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div class="op-rank ${rankClass}">${rank+1}</div>
-      <div class="op-avatar" style="background:${AVATAR_COLORS[cidx]}">${initials}</div>
-      <div style="flex:1;min-width:0">
-        <div class="ec-n" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${w.nome}</div>
-        <div class="ec-m">${w.categoria||'—'}</div>
-      </div>
-      <span class="tb ${tr.cls}">${tr.label}</span>
-    </div>
-    <div class="ec-s">
-      <div class="es"><div class="esv">${w.total}</div><div class="esl">Total</div></div>
-      <div class="es"><div class="esv" style="${w.criticos>0?'color:var(--rd)':''}">${w.criticos}</div><div class="esl">Críticos</div></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);font-family:var(--mo);margin-bottom:4px">
-      <span>Média grav.</span><span>${w.avg}</span>
-    </div>
-    <div class="op-perf-bar"><div class="op-perf-fill" style="width:${barPct}%;background:${barColor}"></div></div>
-    ${rankBadge?`<div class="op-badge-txt">${rankBadge}</div>`:''}
-  </div>`;
-}
-
-function updateDonut() {
-  const workers=getWorkerStats();
-  const melh=workers.filter(w=>w.trend==='melhora').length;
-  const piora=workers.filter(w=>w.trend==='piora').length;
-  const crit=workers.filter(w=>w.criticos>0).length;
-  const est=Math.max(workers.length-melh-piora,0);
-  const total=workers.length;
-  document.getElementById('donut-total-num').textContent=total;
-  const data=[{label:'Melhorando',val:melh,color:'#22c55e'},{label:'Estável',val:est,color:'#3b82f6'},{label:'Piorando',val:piora,color:'#f97316'},{label:'Críticos',val:crit,color:'#ef4444'}];
-  document.getElementById('donut-legend').innerHTML=data.map(d=>`<div class="dl-item"><div class="dl-dot" style="background:${d.color}"></div><div class="dl-label">${d.label}</div><div class="dl-val">${d.val}</div><div class="dl-pct">${total?Math.round((d.val/total)*100):0}%</div></div>`).join('');
-  if(_donutChart) _donutChart.destroy();
-  const ctx=document.getElementById('donut-chart').getContext('2d');
-  _donutChart=new Chart(ctx,{type:'doughnut',data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.val||0.001),backgroundColor:data.map(d=>d.color),borderColor:'#111827',borderWidth:3,hoverBorderWidth:4,hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.12)',borderWidth:1,padding:10,callbacks:{label:c=>` ${c.label}: ${c.raw===0.001?0:c.raw} operadores`}}},animation:{animateRotate:true,duration:700}}});
-}
-
-function setChartPeriod(days,btn) {
-  _chartPeriod=days;
-  document.querySelectorAll('.ppill').forEach(p=>p.classList.remove('on'));
-  btn.classList.add('on');
-  updateLineChart();
-}
-
-function updateLineChart() {
-  const now=new Date(), labels=[], totals=[], critics=[];
-  for(let i=_chartPeriod-1;i>=0;i--) {
-    const d=new Date(now); d.setDate(d.getDate()-i);
-    labels.push(d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}));
-    const ds=new Date(d); ds.setHours(0,0,0,0);
-    const de=new Date(d); de.setHours(23,59,59,999);
-    const day=_allErrors.filter(e=>{const t=new Date(e.ts*1000);return t>=ds&&t<=de});
-    totals.push(day.length); critics.push(day.filter(e=>e.gravidade==='critica').length);
-  }
-  if(_lineChart) _lineChart.destroy();
-  const ctx=document.getElementById('line-chart').getContext('2d');
-  const gP=ctx.createLinearGradient(0,0,0,185); gP.addColorStop(0,'rgba(139,92,246,.25)'); gP.addColorStop(1,'rgba(139,92,246,0)');
-  const gR=ctx.createLinearGradient(0,0,0,185); gR.addColorStop(0,'rgba(239,68,68,.18)'); gR.addColorStop(1,'rgba(239,68,68,0)');
-  _lineChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Total de erros',data:totals,borderColor:'#8b5cf6',backgroundColor:gP,borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#8b5cf6',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true},{label:'Erros críticos',data:critics,borderColor:'#ef4444',backgroundColor:gR,borderWidth:2,pointRadius:4,pointBackgroundColor:'#ef4444',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10},boxWidth:8,padding:14}},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,padding:10}},scales:{x:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false}},y:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false},beginAtZero:true}},animation:{duration:500}}});
-}
-
-async function refreshDashboard() {
-  await loadDashData();
-  const workers=getWorkerStats();
-  updateKPIs(workers); updateDonut(); updateLineChart(); renderDashCards();
-}
-window.refreshDashboard = refreshDashboard;
-
-document.getElementById('btn-refresh-dash')?.addEventListener('click',async()=>{await refreshDashboard();showToast('Dados atualizados!','ok');});
-document.addEventListener('DOMContentLoaded',()=>{setTimeout(refreshDashboard,400);});
-
-async function criarAdmin() {
-  const usuario=document.getElementById('adm-usuario').value.trim();
-  const senha=document.getElementById('adm-senha').value;
-  const podeCriar=document.getElementById('adm-pode-criar').checked;
-  const msgEl=document.getElementById('msg-adm-criar');
-  if(!usuario||!senha){msgEl.style.color='var(--rd)';msgEl.textContent='Preencha usuário e senha.';return}
-  try {
-    const dados=await _apiFetch('/admins',{method:'POST',body:JSON.stringify({usuario,senha,pode_criar_admins:podeCriar})});
-    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;document.getElementById('adm-usuario').value='';document.getElementById('adm-senha').value='';document.getElementById('adm-pode-criar').checked=false;carregarAdmins();}
-    else{msgEl.style.color='var(--rd)';msgEl.textContent=(dados&&dados.mensagem)||'Erro ao criar admin.'}
-  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar ao servidor.'}
-  setTimeout(()=>{msgEl.textContent=''},4000);
-}
-
-async function deletarAdmin(usuario) {
-  if(!confirm('Remover o admin "'+usuario+'"?')) return;
-  const msgEl=document.getElementById('msg-adm-del');
-  try {
-    const dados=await _apiFetch('/admins/'+encodeURIComponent(usuario),{method:'DELETE'});
-    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;carregarAdmins();}
-    else{msgEl.style.color='var(--rd)';msgEl.textContent=dados?dados.mensagem:'Erro.'}
-  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar.'}
-  setTimeout(()=>{msgEl.textContent=''},4000);
-}
-
-async function carregarAdmins() {
-  try {
-    const dados=await _apiFetch('/admins');
-    const tbody=document.getElementById('adm-tbody');
-    const thAcao=document.getElementById('th-acao');
-    const isSA=window._role==='superadmin';
-    if(isSA) thAcao.style.display='';
-    tbody.innerHTML='';
-    (dados.admins||[]).forEach(a=>{
-      const tr=document.createElement('tr');
-      const isMe=a.usuario===window._usuario;
-      const podeEx=isSA&&a.role!=='superadmin'&&!isMe;
-      tr.innerHTML=`<td>${a.usuario}${isMe?' <span style="font-size:10px;color:var(--mt)">(você)</span>':''}</td><td><span class="role-pill role-${a.role}">${a.role}</span></td>${isSA?`<td>${podeEx?`<button class="btn b-rd" style="padding:4px 12px;font-size:11px" onclick="deletarAdmin('${a.usuario}')">Remover</button>`:'—'}</td>`:''}`;
-      tbody.appendChild(tr);
-    });
-  } catch{console.error('Erro ao carregar admins.')}
-}
-
-document.getElementById('btn-nav-admins')?.addEventListener('click',carregarAdmins);
-</script>
+ 
 <script src="/js/script.js"></script>
 <script src="/js/conectaapi.js"></script>
-</body>
-</html>
