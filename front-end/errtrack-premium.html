@@ -390,6 +390,21 @@
 
 <script src="/js/script.js"></script>
 <script src="/js/conectaapi.js"></script>
+<script>
+(async function initRole() {
+  try {
+    const res = await fetch('/me', { credentials: 'include' });
+    if (res.status === 401) { window.location.href = '/'; return; }
+    const dados = await res.json();
+    window._role = dados.role;
+    window._usuario = dados.usuario;
+    const btnAdmins = document.getElementById('btn-nav-admins');
+    if (btnAdmins && (dados.role === 'superadmin' || dados.role === 'admin_full')) btnAdmins.style.display = 'flex';
+    const tw = document.getElementById('toggle-full-wrap');
+    if (tw && dados.role !== 'superadmin') tw.style.display = 'none';
+  } catch(e) {}
+})();
+</script>
 
 <script>
 // ── Executa APÓS o DOM e scripts carregarem ──────────────────────────────────
