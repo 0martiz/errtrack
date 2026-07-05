@@ -1,32 +1,21 @@
-import bcrypt
-import psycopg2
-import os
-import time
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from jose import JWTError, jwt
-from datetime import datetime, timedelta, timezone
-
-# ── configuração ──────────────────────────────────────────────────────────────
+from jose import jwt, JWTError
+from passlib.context import CryptContext
+import psycopg2, os, time, io, csv
+from dotenv import load_dotenv
 
 load_dotenv()
-
-SECRET_KEY         = os.environ.get("SECRET_KEY", "troca-isso-em-producao")
-ALGORITHM          = "HS256"
-TOKEN_EXPIRE_HORAS = 8
-IS_PROD            = os.environ.get("RENDER") == "true"   # Render define RENDER=true automaticamente
-
-ALLOWED_ORIGINS = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "https://errtrack.onrender.com"
-).split(",")
-
 app = FastAPI()
 
+SECRET_KEY = os.environ.get("SECRET_KEY", "fallback-secret")
+ALGORITHM  = "HS256"
+pwd_ctx    = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "https://errtrack-45jm.onrender.com").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -37,87 +26,53 @@ app.add_middleware(
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ── static files ──────────────────────────────────────────────────────────────
-# /static removido — /css, /js e /img já cobrem tudo sem conflito
-
-app.mount("/css", StaticFiles(directory=os.path.join(BASE_DIR, "front-end/css")), name="css")
 app.mount("/js",  StaticFiles(directory=os.path.join(BASE_DIR, "front-end/js")),  name="js")
+app.mount("/css", StaticFiles(directory=os.path.join(BASE_DIR, "front-end/css")), name="css")
 app.mount("/img", StaticFiles(directory=os.path.join(BASE_DIR, "front-end/img")), name="img")
 
-# ── conexão com reconexão automática ─────────────────────────────────────────
+# ── DB ────────────────────────────────────────────────────────────────────────
+_conn = None
 
-conexao = None
+def get_conn():
+    global _conn
+    try:
+        if _conn is None or _conn.closed:
+            _conn = psycopg2.connect(os.environ["DATABASE_URL"])
+            _conn.autocommit = False
+        else:
+            _conn.cursor().execute("SELECT 1")
+    except Exception:
+        _conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        _conn.autocommit = False
+    return _conn
 
 def get_cursor():
-    """
-    Retorna um cursor ativo.
-    Se a conexão estiver morta (timeout, restart do banco free tier),
-    fecha a conexão antiga e abre uma nova antes de devolver o cursor.
-    """
-    global conexao
-    try:
-        if conexao is None or conexao.closed:
-            raise Exception("conexão nula ou fechada")
-        cur = conexao.cursor()
-        cur.execute("SELECT 1")
-        return cur
-    except Exception:
-        # Fecha a conexão antiga para não vazar recursos
-        if conexao is not None:
-            try:
-                conexao.close()
-            except Exception:
-                pass
-        conexao = psycopg2.connect(
-            os.environ["DATABASE_URL"],
-            connect_timeout=10
-        )
-        return conexao.cursor()
+    return get_conn().cursor()
 
 def commit():
-    conexao.commit()
-
-# ── criação de tabelas via startup event ──────────────────────────────────────
-# FIX BUG 1: criatabela() estava sendo chamada no toplevel (linha solta).
-# Isso causava crash imediato se DATABASE_URL não estivesse disponível
-# no exato momento do import. Agora é executada apenas após o app estar pronto.
-
-@app.on_event("startup")
-def startup():
-    _criatabela()
+    get_conn().commit()
 
 def _criatabela():
     cur = get_cursor()
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS funcionarios(
-        id             SERIAL PRIMARY KEY,
-        nomecompleto   TEXT,
-        especializacao TEXT,
-        periodo        VARCHAR(11),
-        categoria      TEXT,
-        observacoes    TEXT,
-        pausa1         TEXT,
-        pausa2         TEXT,
-        pausa3         TEXT
+    CREATE TABLE IF NOT EXISTS admins(
+        id       SERIAL PRIMARY KEY,
+        usuario  TEXT UNIQUE,
+        senha    TEXT,
+        role     TEXT DEFAULT 'admin'
     )""")
-    # Migração segura: adiciona colunas de pausa se a tabela já existia sem elas
-    for col in ("pausa1", "pausa2", "pausa3"):
-        try:
-            cur.execute(f"ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS {col} TEXT")
-        except Exception:
-            conexao.rollback()
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS login(
-        usuario TEXT PRIMARY KEY,
-        nome    TEXT,
-        senha   TEXT,
-        role    TEXT NOT NULL DEFAULT 'admin'
+    CREATE TABLE IF NOT EXISTS funcionarios(
+        id              SERIAL PRIMARY KEY,
+        nomecompleto    TEXT,
+        especializacao  TEXT,
+        periodotrabalho TEXT,
+        categoria       TEXT,
+        observacoes     TEXT,
+        pausa1          TEXT,
+        pausa2          TEXT,
+        pausa3          TEXT
     )""")
-    # Migração segura: adiciona coluna role se a tabela já existia sem ela
-    try:
-        cur.execute("ALTER TABLE login ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'")
-    except Exception:
-        conexao.rollback()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS erros(
         id              SERIAL PRIMARY KEY,
@@ -128,78 +83,102 @@ def _criatabela():
         categoria       TEXT,
         ts              INTEGER
     )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS feedbacks(
+        id              SERIAL PRIMARY KEY,
+        nomefuncionario TEXT,
+        nota_geral      REAL,
+        pontos_melhora  TEXT,
+        texto_feedback  TEXT,
+        aplicado_por    TEXT,
+        ts              INTEGER
+    )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS treinamentos(
+        id              SERIAL PRIMARY KEY,
+        nomefuncionario TEXT,
+        titulo          TEXT,
+        descricao       TEXT,
+        status          TEXT DEFAULT 'pendente',
+        aplicado_por    TEXT,
+        ts              INTEGER
+    )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS indicadores(
+        id        SERIAL PRIMARY KEY,
+        fila      TEXT,
+        segmento  TEXT,
+        tma       TEXT,
+        tme       TEXT,
+        total     INTEGER,
+        atendidas INTEGER,
+        perdidas  INTEGER,
+        sla       TEXT,
+        periodo   TEXT,
+        ts        INTEGER
+    )""")
     commit()
 
-# ── modelos ───────────────────────────────────────────────────────────────────
+@app.on_event("startup")
+def startup():
+    _criatabela()
 
-class Login(BaseModel):
+# ── MODELOS ───────────────────────────────────────────────────────────────────
+class LoginData(BaseModel):
     usuario: str
     senha:   str
 
-class Funcionarios(BaseModel):
-    classnomefuncionario: str
-    classespecializacao:  str
-    classperiodo:         str
-    classcategoria:       str
-    classobservacoes:     str   # FIX BUG 7: era classobservações (com acento)
-    classpausa1:          str = ""
-    classpausa2:          str = ""
-    classpausa3:          str = ""
-
-class Funcionario(BaseModel):
-    nomefuncionario: str
-    especializacao:  str
-    periodo:         str
-    categoria:       str
-    observacoes:     str
-    pausa1:          str = ""
-    pausa2:          str = ""
-    pausa3:          str = ""
-
-class Erro(BaseModel):
+class ErroData(BaseModel):
     nomefuncionario: str
     periodo:         str
     descricao:       str
     gravidade:       str
-    categoria:       str
+    categoria:       str = ""
 
-class CriarAdmin(BaseModel):
+class FuncionarioData(BaseModel):
+    nomecompleto:    str
+    especializacao:  str  = ""
+    periodotrabalho: str  = ""
+    categoria:       str  = ""
+    observacoes:     str  = ""
+    pausa1:          str  = ""
+    pausa2:          str  = ""
+    pausa3:          str  = ""
+
+class AdminData(BaseModel):
     usuario:           str
     senha:             str
     pode_criar_admins: bool = False
 
-# ── utilitários ───────────────────────────────────────────────────────────────
+class Feedback(BaseModel):
+    nomefuncionario: str
+    nota_geral:      float
+    pontos_melhora:  str
+    texto_feedback:  str
+    aplicado_por:    str
 
-def gerar_hash(senha: str) -> str:
-    return bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
+class Treinamento(BaseModel):
+    nomefuncionario: str
+    titulo:          str
+    descricao:       str  = ""
+    status:          str  = "pendente"
+    aplicado_por:    str
 
-def verificar_senha(senha: str, hash_salvo: str) -> bool:
-    return bcrypt.checkpw(senha.encode(), hash_salvo.encode())
+# ── AUTH ──────────────────────────────────────────────────────────────────────
+def criar_token(usuario: str, role: str):
+    return jwt.encode({"sub": usuario, "role": role, "exp": time.time() + 86400 * 7}, SECRET_KEY, algorithm=ALGORITHM)
 
-def gerar_token(usuario: str, role: str) -> str:
-    # FIX BUG 6: datetime.utcnow() está deprecated no Python 3.12+
-    expira = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRE_HORAS)
-    return jwt.encode({"sub": usuario, "role": role, "exp": expira}, SECRET_KEY, algorithm=ALGORITHM)
-
-def verificar_token(token: str):
+def usuario_autenticado(request: Request):
+    token = request.cookies.get("token")
+    if not token:
+        return None
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return {"usuario": payload.get("sub"), "role": payload.get("role", "admin")}
+        return payload
     except JWTError:
         return None
 
-def usuario_autenticado(request: Request):
-    token = request.cookies.get("errtrack_token")
-    return verificar_token(token) if token else None
-
-def exige_role(request: Request, roles_permitidas: list):
-    info = usuario_autenticado(request)
-    if not info or info["role"] not in roles_permitidas:
-        return None
-    return info
-
-# ── rotas de páginas ──────────────────────────────────────────────────────────
-
+# ── ROTAS PÚBLICAS ────────────────────────────────────────────────────────────
 @app.get("/")
 def serve_login():
     return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
@@ -209,152 +188,153 @@ def serve_sistema(request: Request):
     if not usuario_autenticado(request):
         return FileResponse(os.path.join(BASE_DIR, "front-end/login.html"))
     path = os.path.join(BASE_DIR, "front-end/errtrack-premium.html")
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         content = f.read().replace("/static/conectaapi.js", "/js/conectaapi.js")
-    from fastapi.responses import HTMLResponse
     return HTMLResponse(content=content)
 
-# ── login / logout ────────────────────────────────────────────────────────────
-
 @app.post("/login")
-def verifica_usuario(login: Login):
+def login(data: LoginData, request: Request):
     cur = get_cursor()
-    cur.execute(
-        "SELECT senha, role FROM login WHERE usuario = %s",
-        (login.usuario,)
-    )
-    resultado = cur.fetchone()
-
-    if resultado and verificar_senha(login.senha, resultado[0]):
-        role  = resultado[1]
-        token = gerar_token(login.usuario, role)
-        response = JSONResponse(content={"status": "sucesso", "role": role})
-        # FIX BUG 4: adicionado samesite="lax" e secure condicional
-        # samesite="lax" funciona em HTTPS same-origin (Render) sem precisar de none
-        response.set_cookie(
-            key="errtrack_token",
-            value=token,
-            httponly=True,
-            max_age=TOKEN_EXPIRE_HORAS * 3600,
-            samesite="lax",
-            secure=IS_PROD,
-        )
-        return response
-
-    return JSONResponse(
-        content={"mensagem": "Usuário ou senha incorretos."},
-        status_code=401
-    )
+    cur.execute("SELECT senha, role FROM admins WHERE usuario = %s", (data.usuario,))
+    row = cur.fetchone()
+    if not row or not pwd_ctx.verify(data.senha, row[0]):
+        return JSONResponse(content={"status": "erro", "mensagem": "Usuário ou senha incorretos."}, status_code=401)
+    token = criar_token(data.usuario, row[1])
+    resp  = JSONResponse(content={"status": "sucesso", "role": row[1]})
+    resp.set_cookie("token", token, httponly=True, samesite="lax",
+                    secure=os.environ.get("RENDER") == "true", max_age=86400 * 7)
+    return resp
 
 @app.post("/logout")
 def logout():
-    response = JSONResponse(content={"status": "ok"})
-    response.delete_cookie("errtrack_token")
-    return response
+    resp = JSONResponse(content={"status": "sucesso"})
+    resp.delete_cookie("token")
+    return resp
 
 @app.get("/me")
-def get_me(request: Request):
-    info = usuario_autenticado(request)
-    if not info:
+def me(request: Request):
+    payload = usuario_autenticado(request)
+    if not payload:
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
-    return {"usuario": info["usuario"], "role": info["role"]}
+    return {"usuario": payload.get("sub"), "role": payload.get("role")}
 
-# ── funcionários ──────────────────────────────────────────────────────────────
+@app.post("/setup")
+def setup():
+    cur = get_cursor()
+    cur.execute("SELECT COUNT(*) FROM admins")
+    if cur.fetchone()[0] > 0:
+        return JSONResponse(content={"status": "erro", "mensagem": "Setup já realizado."}, status_code=403)
+    cur.execute("INSERT INTO admins(usuario, senha, role) VALUES(%s, %s, %s)",
+                ("Lucas.Martins", pwd_ctx.hash("Master@2026!"), "superadmin"))
+    commit()
+    return {"status": "sucesso", "mensagem": "Superadmin criado!"}
 
-@app.post("/funcionarios")
-def cadastrar_funcionario(funcionarios: Funcionarios, request: Request):
-    if not usuario_autenticado(request):
+# ── ADMINS ────────────────────────────────────────────────────────────────────
+@app.get("/admins")
+def listar_admins(request: Request):
+    payload = usuario_autenticado(request)
+    if not payload:
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute(
-        "SELECT id FROM funcionarios WHERE nomecompleto = %s",
-        (funcionarios.classnomefuncionario,)
-    )
-    if cur.fetchone():
-        return {"mensagem": "Funcionário já cadastrado!"}
-    cur.execute(
-        "INSERT INTO funcionarios(nomecompleto, especializacao, periodo, categoria, observacoes, pausa1, pausa2, pausa3) VALUES(%s, %s, %s, %s, %s, %s, %s, %s)",
-        (
-            funcionarios.classnomefuncionario,
-            funcionarios.classespecializacao,
-            funcionarios.classperiodo,
-            funcionarios.classcategoria,
-            funcionarios.classobservacoes,   # FIX BUG 7: campo sem acento
-            funcionarios.classpausa1,
-            funcionarios.classpausa2,
-            funcionarios.classpausa3,
-        )
-    )
-    commit()
-    return {"status": "sucesso", "mensagem": "Funcionário cadastrado com sucesso!"}
+    cur.execute("SELECT usuario, role FROM admins ORDER BY id")
+    rows = cur.fetchall()
+    return {"admins": [{"usuario": r[0], "role": r[1]} for r in rows]}
 
+@app.post("/admins")
+def criar_admin(data: AdminData, request: Request):
+    payload = usuario_autenticado(request)
+    if not payload or payload.get("role") not in ("superadmin", "admin_full"):
+        return JSONResponse(content={"mensagem": "Sem permissão."}, status_code=403)
+    role = "admin_full" if data.pode_criar_admins else "admin"
+    cur  = get_cursor()
+    try:
+        cur.execute("INSERT INTO admins(usuario, senha, role) VALUES(%s, %s, %s)",
+                    (data.usuario, pwd_ctx.hash(data.senha), role))
+        commit()
+        return {"status": "sucesso", "mensagem": f"Admin '{data.usuario}' criado!"}
+    except Exception:
+        get_conn().rollback()
+        return JSONResponse(content={"mensagem": "Usuário já existe."}, status_code=409)
+
+@app.delete("/admins/{usuario}")
+def deletar_admin(usuario: str, request: Request):
+    payload = usuario_autenticado(request)
+    if not payload or payload.get("role") not in ("superadmin", "admin_full"):
+        return JSONResponse(content={"mensagem": "Sem permissão."}, status_code=403)
+    cur = get_cursor()
+    cur.execute("SELECT role FROM admins WHERE usuario = %s", (usuario,))
+    row = cur.fetchone()
+    if not row:
+        return JSONResponse(content={"mensagem": "Admin não encontrado."}, status_code=404)
+    if row[0] == "superadmin":
+        return JSONResponse(content={"mensagem": "Não é possível remover o superadmin."}, status_code=403)
+    cur.execute("DELETE FROM admins WHERE usuario = %s", (usuario,))
+    commit()
+    return {"status": "sucesso", "mensagem": f"Admin '{usuario}' removido!"}
+
+# ── FUNCIONÁRIOS ──────────────────────────────────────────────────────────────
 @app.get("/funcionarios")
 def listar_funcionarios(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("SELECT id, nomecompleto, categoria, pausa1, pausa2, pausa3 FROM funcionarios ORDER BY categoria, nomecompleto")
+    cur.execute("SELECT id,nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3 FROM funcionarios ORDER BY nomecompleto")
     rows = cur.fetchall()
-    return {"funcionarios": [{"id": r[0], "nomecompleto": r[1], "categoria": r[2], "pausa1": r[3], "pausa2": r[4], "pausa3": r[5]} for r in rows]}
+    return {"funcionarios": [{"id":r[0],"nomecompleto":r[1],"especializacao":r[2],"periodotrabalho":r[3],"categoria":r[4],"observacoes":r[5],"pausa1":r[6],"pausa2":r[7],"pausa3":r[8]} for r in rows]}
 
-@app.get("/funcionarios/{nome}")
-def buscar_funcionario(nome: str, request: Request):
+@app.post("/funcionarios")
+def criar_funcionario(data: FuncionarioData, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("SELECT id, nomecompleto, especializacao, periodo, categoria, observacoes, pausa1, pausa2, pausa3 FROM funcionarios WHERE nomecompleto = %s", (nome,))
-    r = cur.fetchone()
-    if r:
-        return {"funcionario": {"id": r[0], "nomecompleto": r[1], "especializacao": r[2], "periodo": r[3], "categoria": r[4], "observacoes": r[5], "pausa1": r[6], "pausa2": r[7], "pausa3": r[8]}}
-    return JSONResponse(content={"mensagem": "Funcionário não encontrado"}, status_code=404)
-
-@app.put("/funcionarios/{nome}")
-def atualizar_funcionario(nome: str, funcionario: Funcionario, request: Request):
-    if not usuario_autenticado(request):
-        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
-    cur = get_cursor()
-    cur.execute("""
-        UPDATE funcionarios
-        SET nomecompleto=%s, especializacao=%s, periodo=%s, categoria=%s, observacoes=%s, pausa1=%s, pausa2=%s, pausa3=%s
-        WHERE nomecompleto=%s
-    """, (
-        funcionario.nomefuncionario, funcionario.especializacao,
-        funcionario.periodo, funcionario.categoria,
-        funcionario.observacoes, funcionario.pausa1, funcionario.pausa2, funcionario.pausa3,
-        nome
-    ))
+    cur.execute("INSERT INTO funcionarios(nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)",
+                (data.nomecompleto,data.especializacao,data.periodotrabalho,data.categoria,data.observacoes,data.pausa1,data.pausa2,data.pausa3))
     commit()
-    if cur.rowcount:
-        return {"status": "sucesso", "mensagem": "Funcionário atualizado!"}
-    return JSONResponse(content={"mensagem": "Funcionário não encontrado"}, status_code=404)
+    return {"status": "sucesso", "mensagem": "Funcionário cadastrado!"}
 
-@app.delete("/funcionarios/{nome}")
-def deletar_funcionario(nome: str, request: Request):
+@app.put("/funcionarios/{fid}")
+def atualizar_funcionario(fid: int, data: FuncionarioData, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("DELETE FROM funcionarios WHERE nomecompleto = %s", (nome,))
+    cur.execute("UPDATE funcionarios SET nomecompleto=%s,especializacao=%s,periodotrabalho=%s,categoria=%s,observacoes=%s,pausa1=%s,pausa2=%s,pausa3=%s WHERE id=%s",
+                (data.nomecompleto,data.especializacao,data.periodotrabalho,data.categoria,data.observacoes,data.pausa1,data.pausa2,data.pausa3,fid))
     commit()
-    if cur.rowcount:
-        return {"mensagem": "Funcionário excluído com sucesso!"}
-    return JSONResponse(content={"mensagem": "Funcionário não encontrado"}, status_code=404)
+    return {"status": "sucesso", "mensagem": "Funcionário atualizado!"}
 
-# ── erros ─────────────────────────────────────────────────────────────────────
-
-@app.post("/erros")
-def registrar_erro(erro: Erro, request: Request):
+@app.delete("/funcionarios/{fid}")
+def deletar_funcionario(fid: int, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute(
-        "INSERT INTO erros(nomefuncionario, periodo, descricao, gravidade, categoria, ts) VALUES(%s, %s, %s, %s, %s, %s)",
-        (erro.nomefuncionario, erro.periodo, erro.descricao, erro.gravidade, erro.categoria, int(time.time()))
-    )
+    cur.execute("DELETE FROM funcionarios WHERE id=%s", (fid,))
     commit()
-    return {"status": "sucesso", "mensagem": "Erro registrado com sucesso!"}
+    return {"status": "sucesso", "mensagem": "Funcionário removido!"}
 
+@app.post("/importar-pausas")
+async def importar_pausas(request: Request, file: UploadFile = File(...)):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    import openpyxl
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    ws = wb.active
+    cur = get_cursor()
+    atualizados = 0
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row[0]: continue
+        nome = str(row[0]).strip()
+        p1   = str(row[1]).strip() if len(row) > 1 and row[1] else ""
+        p2   = str(row[2]).strip() if len(row) > 2 and row[2] else ""
+        p3   = str(row[3]).strip() if len(row) > 3 and row[3] else ""
+        cur.execute("UPDATE funcionarios SET pausa1=%s,pausa2=%s,pausa3=%s WHERE nomecompleto ILIKE %s", (p1,p2,p3,nome))
+        atualizados += cur.rowcount
+    commit()
+    return {"status": "sucesso", "mensagem": f"{atualizados} funcionário(s) atualizado(s)!"}
+
+# ── ERROS ─────────────────────────────────────────────────────────────────────
 @app.get("/erros")
-def listar_todos_erros(request: Request):
+def listar_erros(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
@@ -366,225 +346,201 @@ def listar_todos_erros(request: Request):
         ORDER BY e.ts DESC
     """)
     rows = cur.fetchall()
-    return {"erros": [
-        {"id": r[0], "nomefuncionario": r[1], "periodo": r[2], "descricao": r[3],
-         "gravidade": r[4], "categoria": r[5], "ts": r[6], "cat_func": r[7]}
-        for r in rows
-    ]}
+    return {"erros": [{"id":r[0],"nomefuncionario":r[1],"periodo":r[2],"descricao":r[3],"gravidade":r[4],"categoria":r[5],"ts":r[6],"cat_func":r[7]} for r in rows]}
 
 @app.get("/erros/{nome}")
-def listar_erros_funcionario(nome: str, request: Request):
+def erros_por_funcionario(nome: str, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute(
-        "SELECT id, periodo, descricao, gravidade, categoria, ts FROM erros WHERE nomefuncionario = %s ORDER BY ts DESC",
-        (nome,)
-    )
+    cur.execute("""
+        SELECT e.id, e.nomefuncionario, e.periodo, e.descricao, e.gravidade, e.categoria, e.ts,
+               f.categoria as cat_func
+        FROM erros e
+        LEFT JOIN funcionarios f ON f.nomecompleto = e.nomefuncionario
+        WHERE e.nomefuncionario = %s ORDER BY e.ts DESC
+    """, (nome,))
     rows = cur.fetchall()
-    return {"erros": [
-        {"id": r[0], "periodo": r[1], "descricao": r[2], "gravidade": r[3], "categoria": r[4], "ts": r[5]}
-        for r in rows
-    ]}
+    return {"erros": [{"id":r[0],"nomefuncionario":r[1],"periodo":r[2],"descricao":r[3],"gravidade":r[4],"categoria":r[5],"ts":r[6],"cat_func":r[7]} for r in rows]}
+
+@app.post("/erros")
+def registrar_erro(data: ErroData, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("INSERT INTO erros(nomefuncionario,periodo,descricao,gravidade,categoria,ts) VALUES(%s,%s,%s,%s,%s,%s)",
+                (data.nomefuncionario,data.periodo,data.descricao,data.gravidade,data.categoria,int(time.time())))
+    commit()
+    return {"status": "sucesso", "mensagem": "Erro registrado!"}
 
 @app.delete("/erros/{erro_id}")
 def deletar_erro(erro_id: int, request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("DELETE FROM erros WHERE id = %s", (erro_id,))
+    cur.execute("DELETE FROM erros WHERE id=%s", (erro_id,))
     commit()
     if cur.rowcount:
-        return {"status": "sucesso", "mensagem": "Erro deletado!"}
-    return JSONResponse(content={"mensagem": "Erro não encontrado"}, status_code=404)
+        return {"status": "sucesso", "mensagem": "Erro removido!"}
+    return JSONResponse(content={"mensagem": "Erro não encontrado."}, status_code=404)
 
-# ── gestão de admins ──────────────────────────────────────────────────────────
-
-@app.get("/admins")
-def listar_admins(request: Request):
-    info = exige_role(request, ["superadmin", "admin_full"])
-    if not info:
-        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=403)
-    cur = get_cursor()
-    cur.execute("SELECT usuario, nome, role FROM login ORDER BY role, usuario")
-    rows = cur.fetchall()
-    return {"admins": [{"usuario": r[0], "nome": r[1], "role": r[2]} for r in rows]}
-
-@app.post("/admins")
-def criar_admin(dados: CriarAdmin, request: Request):
-    info = exige_role(request, ["superadmin", "admin_full"])
-    if not info:
-        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=403)
-    role_novo = "admin_full" if dados.pode_criar_admins else "admin"
-    if role_novo == "admin_full" and info["role"] != "superadmin":
-        return JSONResponse(
-            content={"mensagem": "Apenas o superadmin pode criar admins com essa permissão."},
-            status_code=403
-        )
-    cur = get_cursor()
-    cur.execute("SELECT usuario FROM login WHERE usuario = %s", (dados.usuario,))
-    if cur.fetchone():
-        return JSONResponse(content={"mensagem": "Usuário já existe."}, status_code=400)
-    cur.execute(
-        "INSERT INTO login(usuario, nome, senha, role) VALUES(%s, %s, %s, %s)",
-        (dados.usuario, dados.usuario, gerar_hash(dados.senha), role_novo)
-    )
-    commit()
-    return {"status": "sucesso", "mensagem": f"Admin '{dados.usuario}' criado com role '{role_novo}'."}
-
-@app.delete("/admins/{usuario}")
-def deletar_admin(usuario: str, request: Request):
-    info = exige_role(request, ["superadmin"])
-    if not info:
-        return JSONResponse(content={"mensagem": "Apenas o superadmin pode remover admins."}, status_code=403)
-    cur = get_cursor()
-    cur.execute("SELECT role FROM login WHERE usuario = %s", (usuario,))
-    alvo = cur.fetchone()
-    if not alvo:
-        return JSONResponse(content={"mensagem": "Usuário não encontrado."}, status_code=404)
-    if alvo[0] == "superadmin":
-        return JSONResponse(content={"mensagem": "O superadmin não pode ser removido."}, status_code=400)
-    cur.execute("DELETE FROM login WHERE usuario = %s", (usuario,))
-    commit()
-    return {"status": "sucesso", "mensagem": f"Admin '{usuario}' removido."}
-
-# ── setup inicial (cria o primeiro superadmin) ────────────────────────────────
-
-@app.post("/setup")
-def criar_superadmin(login: Login):
-    cur = get_cursor()
-    cur.execute("SELECT COUNT(*) FROM login")
-    total = cur.fetchone()[0]
-    if total > 0:
-        return JSONResponse(
-            content={"mensagem": "Setup já foi realizado. Rota desativada."},
-            status_code=403
-        )
-    cur.execute(
-        "INSERT INTO login(usuario, nome, senha, role) VALUES(%s, %s, %s, %s)",
-        (login.usuario, login.usuario, gerar_hash(login.senha), "superadmin")
-    )
-    commit()
-    return {"status": "sucesso", "mensagem": f"Superadmin '{login.usuario}' criado com sucesso!"}
-
-from fastapi.responses import StreamingResponse
-import io
-
+# ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 @app.get("/exportar-excel")
 def exportar_excel(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
-    
     cur = get_cursor()
-    cur.execute("""
-        SELECT e.nomefuncionario, e.periodo, e.descricao, e.gravidade, e.categoria,
-               to_timestamp(e.ts) as data
-        FROM erros e ORDER BY e.ts DESC
-    """)
+    cur.execute("SELECT nomefuncionario,periodo,descricao,gravidade,categoria,to_timestamp(ts) FROM erros ORDER BY ts DESC")
     rows = cur.fetchall()
-    
-    # Gera CSV (abre no Excel)
     output = io.StringIO()
-    output.write('\ufeff')  # BOM para Excel reconhecer UTF-8
+    output.write('\ufeff')
     output.write('Funcionário,Período,Descrição,Gravidade,Categoria,Data\n')
     for r in rows:
-        linha = ','.join([
-            f'"{str(r[0] or "")}"',
-            f'"{str(r[1] or "")}"',
-            f'"{str(r[2] or "").replace(chr(34), chr(39))}"',
-            f'"{str(r[3] or "")}"',
-            f'"{str(r[4] or "")}"',
-            f'"{str(r[5] or "")}"',
-        ])
+        linha = ','.join([f'"{str(r[0] or "")}"',f'"{str(r[1] or "")}"',f'"{str(r[2] or "").replace(chr(34),chr(39))}"',f'"{str(r[3] or "")}"',f'"{str(r[4] or "")}"',f'"{str(r[5] or "")}"'])
         output.write(linha + '\n')
-    
     output.seek(0)
-    return StreamingResponse(
-        io.BytesIO(output.getvalue().encode('utf-8')),
-        media_type='text/csv',
-        headers={'Content-Disposition': 'attachment; filename="errtrack_export.xlsx"'}
-    )
+    return StreamingResponse(io.BytesIO(output.getvalue().encode('utf-8')), media_type='text/csv',
+                             headers={'Content-Disposition': 'attachment; filename="errtrack_export.xlsx"'})
 
-# ── importação de pausas via Excel ────────────────────────────────────────────
-from fastapi import UploadFile, File
-from openpyxl import load_workbook
-
-def _norm(s: str) -> str:
-    """Normaliza nome para comparação (sem acento, maiúsculas, sem espaços extras)."""
-    import unicodedata
-    s = (s or "").strip().upper()
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    return " ".join(s.split())
-
-@app.post("/funcionarios/importar-pausas")
-async def importar_pausas(request: Request, arquivo: UploadFile = File(...)):
+# ── FEEDBACKS ─────────────────────────────────────────────────────────────────
+@app.get("/feedbacks")
+def listar_feedbacks(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
-
-    conteudo = await arquivo.read()
-    try:
-        wb = load_workbook(io.BytesIO(conteudo), data_only=True)
-    except Exception:
-        return JSONResponse(content={"mensagem": "Não foi possível ler o arquivo. Envie um .xlsx válido."}, status_code=400)
-
-    ws = wb.active
-
-    # Lê o cabeçalho da primeira linha para descobrir as colunas:
-    # esperado algo como: Nome | Pausa 1 | Pausa 2 | Pausa 3  (ordem flexível, nomes flexíveis)
-    headers = []
-    for cell in ws[1]:
-        headers.append(_norm(str(cell.value)) if cell.value else "")
-
-    def achar_coluna(possiveis):
-        for i, h in enumerate(headers):
-            if any(p in h for p in possiveis):
-                return i
-        return None
-
-    col_nome   = achar_coluna(["NOME"])
-    col_pausa1 = achar_coluna(["PAUSA 1", "PAUSA1", "ENTRADA"])
-    col_pausa2 = achar_coluna(["PAUSA 2", "PAUSA2", "MEIO"])
-    col_pausa3 = achar_coluna(["PAUSA 3", "PAUSA3", "SAIDA", "SAÍDA"])
-
-    if col_nome is None:
-        return JSONResponse(content={"mensagem": "Não encontrei a coluna 'Nome' na planilha."}, status_code=400)
-
     cur = get_cursor()
-    cur.execute("SELECT nomecompleto FROM funcionarios")
-    nomes_cadastrados = {_norm(r[0]): r[0] for r in cur.fetchall()}
+    cur.execute("SELECT id,nomefuncionario,nota_geral,pontos_melhora,texto_feedback,aplicado_por,ts FROM feedbacks ORDER BY ts DESC")
+    rows = cur.fetchall()
+    return {"feedbacks": [{"id":r[0],"nomefuncionario":r[1],"nota_geral":r[2],"pontos_melhora":r[3],"texto_feedback":r[4],"aplicado_por":r[5],"ts":r[6]} for r in rows]}
 
-    atualizados, nao_encontrados = [], []
+@app.get("/feedbacks/{nome}")
+def feedbacks_operador(nome: str, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("SELECT id,nomefuncionario,nota_geral,pontos_melhora,texto_feedback,aplicado_por,ts FROM feedbacks WHERE nomefuncionario=%s ORDER BY ts DESC", (nome,))
+    rows = cur.fetchall()
+    return {"feedbacks": [{"id":r[0],"nomefuncionario":r[1],"nota_geral":r[2],"pontos_melhora":r[3],"texto_feedback":r[4],"aplicado_por":r[5],"ts":r[6]} for r in rows]}
 
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if col_nome >= len(row) or not row[col_nome]:
-            continue
-        nome_planilha = str(row[col_nome]).strip()
-        nome_chave = _norm(nome_planilha)
-        nome_real = nomes_cadastrados.get(nome_chave)
-
-        if not nome_real:
-            nao_encontrados.append(nome_planilha)
-            continue
-
-        def valor(col):
-            if col is None or col >= len(row) or row[col] is None:
-                return ""
-            v = row[col]
-            return v.strftime("%H:%M") if hasattr(v, "strftime") else str(v).strip()
-
-        p1, p2, p3 = valor(col_pausa1), valor(col_pausa2), valor(col_pausa3)
-
-        cur.execute(
-            "UPDATE funcionarios SET pausa1=%s, pausa2=%s, pausa3=%s WHERE nomecompleto=%s",
-            (p1, p2, p3, nome_real)
-        )
-        atualizados.append(nome_real)
-
+@app.post("/feedbacks")
+def salvar_feedback(fb: Feedback, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("INSERT INTO feedbacks(nomefuncionario,nota_geral,pontos_melhora,texto_feedback,aplicado_por,ts) VALUES(%s,%s,%s,%s,%s,%s)",
+                (fb.nomefuncionario,fb.nota_geral,fb.pontos_melhora,fb.texto_feedback,fb.aplicado_por,int(time.time())))
     commit()
+    return {"status": "sucesso", "mensagem": "Feedback salvo!"}
 
-    return {
-        "status": "sucesso",
-        "mensagem": f"{len(atualizados)} funcionário(s) atualizado(s).",
-        "atualizados": atualizados,
-        "nao_encontrados": nao_encontrados
-    }
+@app.delete("/feedbacks/{fid}")
+def deletar_feedback(fid: int, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("DELETE FROM feedbacks WHERE id=%s", (fid,))
+    commit()
+    return {"status": "sucesso", "mensagem": "Feedback removido!"}
+
+# ── TREINAMENTOS ──────────────────────────────────────────────────────────────
+@app.get("/treinamentos")
+def listar_treinamentos(request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("SELECT id,nomefuncionario,titulo,descricao,status,aplicado_por,ts FROM treinamentos ORDER BY ts DESC")
+    rows = cur.fetchall()
+    return {"treinamentos": [{"id":r[0],"nomefuncionario":r[1],"titulo":r[2],"descricao":r[3],"status":r[4],"aplicado_por":r[5],"ts":r[6]} for r in rows]}
+
+@app.post("/treinamentos")
+def criar_treinamento(t: Treinamento, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("INSERT INTO treinamentos(nomefuncionario,titulo,descricao,status,aplicado_por,ts) VALUES(%s,%s,%s,%s,%s,%s)",
+                (t.nomefuncionario,t.titulo,t.descricao,t.status,t.aplicado_por,int(time.time())))
+    commit()
+    return {"status": "sucesso", "mensagem": "Treinamento criado!"}
+
+@app.put("/treinamentos/{tid}")
+async def atualizar_treinamento(tid: int, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    body = await request.json()
+    cur = get_cursor()
+    cur.execute("UPDATE treinamentos SET status=%s WHERE id=%s", (body.get("status"), tid))
+    commit()
+    return {"status": "sucesso"}
+
+@app.delete("/treinamentos/{tid}")
+def deletar_treinamento(tid: int, request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("DELETE FROM treinamentos WHERE id=%s", (tid,))
+    commit()
+    return {"status": "sucesso", "mensagem": "Treinamento removido!"}
+
+# ── INDICADORES ───────────────────────────────────────────────────────────────
+FILA_SEGMENTO = {
+    "ALTERAR VENCIMENTO DE FATURA": "SAC",
+    "DUVIDAS DE COBRANÇA": "SAC",
+    "NEGOCIAR DÉBITOS": "SAC",
+    "SEGUNDA VIA DE BOLETO": "SAC",
+    "LIBERAÇÃO DE CONFIANÇA": "SAC",
+    "FALAR COM ATENDENTE": "SAC",
+    "CONFIGURAR ROTEADOR": "SUPORTE",
+    "LENTIDÃO INTERNET": "SUPORTE",
+    "SEM SINAL DE INTERNET": "SUPORTE",
+    "IMAGENS RUINS": "PRODUTOS DIGITAIS",
+    "PRODUTOS DIGITAIS": "PRODUTOS DIGITAIS",
+    "TV SEM SINAL": "PRODUTOS DIGITAIS",
+}
+
+@app.post("/indicadores/upload")
+async def upload_indicadores(request: Request, file: UploadFile = File(...)):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    content = await file.read()
+    text = content.decode("utf-8-sig", errors="ignore")
+    reader = csv.DictReader(io.StringIO(text), delimiter=";")
+    periodo = time.strftime("%m/%Y")
+    cur = get_cursor()
+    inseridos = 0
+    for row in reader:
+        fila = (row.get("Fila") or "").strip().upper()
+        if not fila: continue
+        segmento = FILA_SEGMENTO.get(fila, "OUTROS")
+        try:
+            cur.execute(
+                "INSERT INTO indicadores(fila,segmento,tma,tme,total,atendidas,perdidas,sla,periodo,ts) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                (fila, segmento,
+                 row.get("TMA","").strip(), row.get("TME","").strip(),
+                 int(row.get("Total") or 0), int(row.get("Atendidas") or 0),
+                 int(row.get("Perdidas") or 0), row.get("%Atendidas <20s","").strip(),
+                 periodo, int(time.time()))
+            )
+            inseridos += 1
+        except Exception:
+            continue
+    commit()
+    return {"status": "sucesso", "mensagem": f"{inseridos} filas importadas para {periodo}!"}
+
+@app.get("/indicadores")
+def listar_indicadores(request: Request, periodo: str = None):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    if periodo:
+        cur.execute("SELECT id,fila,segmento,tma,tme,total,atendidas,perdidas,sla,periodo FROM indicadores WHERE periodo=%s ORDER BY segmento,fila", (periodo,))
+    else:
+        cur.execute("SELECT id,fila,segmento,tma,tme,total,atendidas,perdidas,sla,periodo FROM indicadores ORDER BY ts DESC LIMIT 100")
+    rows = cur.fetchall()
+    return {"indicadores": [{"id":r[0],"fila":r[1],"segmento":r[2],"tma":r[3],"tme":r[4],"total":r[5],"atendidas":r[6],"perdidas":r[7],"sla":r[8],"periodo":r[9]} for r in rows]}
+
+@app.get("/indicadores/periodos")
+def listar_periodos(request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    cur.execute("SELECT DISTINCT periodo FROM indicadores ORDER BY periodo DESC")
+    rows = cur.fetchall()
+    return {"periodos": [r[0] for r in rows]}
