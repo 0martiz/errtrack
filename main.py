@@ -229,6 +229,17 @@ def setup():
     commit()
     return {"status": "sucesso", "mensagem": "Superadmin criado!"}
 
+# ── ROTA TEMPORÁRIA DE RESET (REMOVER APÓS USO) ───────────────────────────────
+@app.post("/reset-senha-temp")
+def reset_senha_temp():
+    cur = get_cursor()
+    cur.execute("UPDATE admins SET senha=%s WHERE usuario='Lucas.Martins'",
+                (pwd_ctx.hash("Master@2026!"),))
+    commit()
+    if cur.rowcount:
+        return {"status": "sucesso", "mensagem": "Senha resetada com passlib!"}
+    return JSONResponse(content={"mensagem": "Usuário não encontrado."}, status_code=404)
+
 # ── ADMINS ────────────────────────────────────────────────────────────────────
 @app.get("/admins")
 def listar_admins(request: Request):
@@ -384,7 +395,7 @@ def deletar_erro(erro_id: int, request: Request):
         return {"status": "sucesso", "mensagem": "Erro removido!"}
     return JSONResponse(content={"mensagem": "Erro não encontrado."}, status_code=404)
 
-# ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
+# ── EXPORTAR ──────────────────────────────────────────────────────────────────
 @app.get("/exportar-excel")
 def exportar_excel(request: Request):
     if not usuario_autenticado(request):
