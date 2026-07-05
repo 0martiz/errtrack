@@ -1,639 +1,498 @@
+(function () {
+  'use strict';
 
-Errtrack premium · HTML
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ErrTrack — Painel da Equipe</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-  <style>
-    .sa-badge{display:inline-block;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;letter-spacing:.05em;vertical-align:middle;margin-left:6px}
-    .ni.ni-super{border-top:1px solid rgba(245,158,11,0.15);margin-top:4px;padding-top:12px}
-    .ni.ni-super svg{stroke:#f59e0b}
-    .ni.ni-super:hover{background:rgba(245,158,11,0.08)}
-    .ni.ni-super.on{background:linear-gradient(135deg,rgba(245,158,11,0.12),rgba(239,68,68,0.07));color:#f59e0b}
-    .ni.ni-super.on::before{background:linear-gradient(180deg,#f59e0b,#ef4444)}
-    .adm-table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
-    .adm-table th{text-align:left;padding:8px 12px;color:var(--mt);font-size:11px;font-family:var(--mo);border-bottom:1px solid var(--border)}
-    .adm-table td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.04)}
-    .adm-table tr:hover td{background:rgba(255,255,255,0.02)}
-    .role-pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:600;font-family:var(--mo)}
-    .role-superadmin{background:rgba(245,158,11,0.15);color:#f59e0b}
-    .role-admin_full{background:rgba(139,92,246,0.15);color:#a78bfa}
-    .role-admin{background:rgba(100,116,139,0.15);color:var(--mt)}
-    .toggle-wrap{display:flex;align-items:center;gap:10px;margin:10px 0 16px}
-    .toggle-wrap label{font-size:13px;color:var(--tx);cursor:pointer}
-    .toggle{position:relative;width:40px;height:22px;cursor:pointer}
-    .toggle input{opacity:0;width:0;height:0}
-    .toggle-slider{position:absolute;inset:0;background:var(--border3);border-radius:22px;transition:.3s}
-    .toggle-slider::before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.3s}
-    .toggle input:checked + .toggle-slider{background:#f59e0b}
-    .toggle input:checked + .toggle-slider::before{transform:translateX(18px)}
-    .sep-section{margin:28px 0 16px;font-size:11px;color:var(--mt);font-family:var(--mo);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);padding-bottom:8px}
-    .charts-row{display:grid;grid-template-columns:1fr 1.8fr;gap:16px;margin-bottom:24px}
-    .chart-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r2);padding:22px;position:relative;overflow:hidden}
-    .chart-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(139,92,246,0.4),transparent)}
-    .chart-card-title{font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--mt);font-family:var(--mo);margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
-    .chart-card-sub{font-size:11px;color:var(--mt2);margin-bottom:18px}
-    .period-pills{display:flex;gap:5px}
-    .ppill{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border3);background:none;color:var(--mt2);transition:.15s;font-family:var(--mo)}
-    .ppill:hover,.ppill.on{background:rgba(139,92,246,0.15);color:var(--accent);border-color:rgba(139,92,246,0.4)}
-    .donut-wrap{display:flex;align-items:center;gap:20px}
-    .donut-canvas-wrap{position:relative;width:150px;height:150px;flex-shrink:0}
-    .donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
-    .donut-total-num{font-size:26px;font-weight:700;color:var(--tx);line-height:1}
-    .donut-total-lbl{font-size:9px;color:var(--mt);font-family:var(--mo);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
-    .donut-legend{display:flex;flex-direction:column;gap:9px;flex:1}
-    .dl-item{display:flex;align-items:center;gap:8px}
-    .dl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-    .dl-label{font-size:11px;color:var(--mt2);flex:1}
-    .dl-val{font-size:12px;font-weight:600;color:var(--tx);font-family:var(--mo)}
-    .dl-pct{font-size:10px;color:var(--mt);font-family:var(--mo);width:30px;text-align:right}
-    .line-canvas-wrap{height:185px;position:relative}
-    .kpi{cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s}
-    .kpi.kpi-active{border-color:rgba(139,92,246,0.45)!important;box-shadow:0 0 20px rgba(139,92,246,0.12)!important}
-    .kpi.kpi-active-rd{border-color:rgba(239,68,68,0.45)!important;box-shadow:0 0 20px rgba(239,68,68,0.1)!important}
-    .kpi.kpi-active-gn{border-color:rgba(34,197,94,0.45)!important;box-shadow:0 0 20px rgba(34,197,94,0.1)!important}
-    .kpi.kpi-active-or{border-color:rgba(249,115,22,0.45)!important;box-shadow:0 0 20px rgba(249,115,22,0.1)!important}
-    .op-rank{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;margin-right:4px}
-    .op-rank-1{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff}
-    .op-rank-2{background:linear-gradient(135deg,#94a3b8,#64748b);color:#fff}
-    .op-rank-3{background:linear-gradient(135deg,#b45309,#92400e);color:#fff}
-    .op-rank-n{background:rgba(255,255,255,0.06);color:var(--mt)}
-    .op-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
-    .op-perf-bar{height:3px;border-radius:3px;background:rgba(255,255,255,0.06);margin-top:10px;overflow:hidden}
-    .op-perf-fill{height:100%;border-radius:3px;transition:width .6s ease}
-    .op-badge-txt{font-size:9px;color:var(--mt);text-align:center;margin-top:6px;font-style:italic;font-family:var(--mo)}
-    .filter-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
-    .filter-left{display:flex;align-items:center;gap:8px}
-    .filter-right{display:flex;align-items:center;gap:8px}
-    .search-wrap{position:relative}
-    .search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:13px;height:13px;stroke:var(--mt);fill:none;stroke-width:2;pointer-events:none}
-    .search-input{background:rgba(255,255,255,0.03);border:1px solid var(--border3);border-radius:9px;padding:7px 12px 7px 30px;font-size:11px;color:var(--tx);outline:none;width:180px;font-family:var(--fn);transition:all .2s}
-    .search-input::placeholder{color:var(--mt)}
-    .search-input:focus{border-color:rgba(139,92,246,0.4);background:rgba(139,92,246,0.04)}
-    .sort-select{background:rgba(255,255,255,0.03);border:1px solid var(--border3);border-radius:9px;padding:7px 28px 7px 10px;font-size:11px;color:var(--mt2);outline:none;cursor:pointer;font-family:var(--mo);transition:.2s;appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'><polyline points='6 9 12 15 18 9'></polyline></svg>");background-repeat:no-repeat;background-position:right 8px center}
-    @media(max-width:900px){.charts-row{grid-template-columns:1fr}}
-  </style>
-</head>
-<body>
-  <script>
-(async function initRole() {
-  try {
-    const res = await fetch('/me', { credentials: 'include' });
-    if (res.status === 401) { window.location.href = '/'; return; }
-    const dados = await res.json();
-    window._role = dados.role;
-    window._usuario = dados.usuario;
-    const btnAdmins = document.getElementById('btn-nav-admins');
-    if (dados.role === 'superadmin' || dados.role === 'admin_full') btnAdmins.style.display = 'flex';
-    if (dados.role !== 'superadmin') document.getElementById('toggle-full-wrap').style.display = 'none';
-  } catch(e) {}
-})();
- 
-async function _apiFetch(path, options = {}) {
-  const res = await fetch(path, { credentials:'include', headers:{'Content-Type':'application/json',...(options.headers||{})}, ...options });
-  if (res.status === 401) { window.location.href = '/'; return null; }
-  return res.json();
-}
- 
-const SEV_W = {baixa:1,media:2,alta:3,critica:4};
-const AVATAR_COLORS = ['#8b5cf6','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#ec4899','#6366f1'];
-let _dashFilter='all', _chartPeriod=7, _donutChart=null, _lineChart=null, _allErrors=[], _allWorkers=[];
- 
-async function loadDashData() {
-  try {
-    const [er,wr] = await Promise.all([fetch('/erros',{credentials:'include'}),fetch('/funcionarios',{credentials:'include'})]);
-    const ed=await er.json(); const wd=await wr.json();
-    _allErrors=ed.erros||[]; _allWorkers=wd.funcionarios||[];
-  } catch(e) {}
-}
- 
-function getWorkerStats() {
-  const stats={};
-  _allWorkers.forEach(w=>{stats[w.nomecompleto]={nome:w.nomecompleto,categoria:w.categoria,erros:[]}});
-  _allErrors.forEach(e=>{
-    if(!stats[e.nomefuncionario]) stats[e.nomefuncionario]={nome:e.nomefuncionario,categoria:e.cat_func||e.categoria||'',erros:[]};
-    stats[e.nomefuncionario].erros.push(e);
-  });
-  return Object.values(stats).map(w=>{
-    const erros=w.erros, total=erros.length;
-    const criticos=erros.filter(e=>e.gravidade==='critica').length;
-    const avg=total?(erros.reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/total).toFixed(1):'0.0';
-    const trend=calcTrend(erros);
-    return {...w,total,criticos,avg:parseFloat(avg),trend};
-  });
-}
- 
-function calcTrend(erros) {
-  if(erros.length<2) return 'estavel';
-  const h=Math.floor(erros.length/2);
-  const a1=erros.slice(0,h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/h;
-  const a2=erros.slice(h).reduce((s,e)=>s+(SEV_W[e.gravidade]||1),0)/(erros.length-h);
-  const d=a2-a1;
-  if(d>0.3) return 'piora';
-  if(d<-0.3) return 'melhora';
-  return 'estavel';
-}
- 
-function updateKPIs(workers) {
-  const total=_allErrors.length, crit=_allErrors.filter(e=>e.gravidade==='critica').length;
-  const melh=workers.filter(w=>w.trend==='melhora').length, piora=workers.filter(w=>w.trend==='piora').length;
-  const n=workers.length||1;
-  document.getElementById('kv-total').textContent=total;
-  document.getElementById('kv-critica').textContent=crit;
-  document.getElementById('kv-critica-pct').textContent=total?`${((crit/total)*100).toFixed(1)}% do total`:'0% do total';
-  document.getElementById('kv-melhora').textContent=melh;
-  document.getElementById('kv-melhora-pct').textContent=`${Math.round((melh/n)*100)}% da equipe`;
-  document.getElementById('kv-piora').textContent=piora;
-  document.getElementById('kv-piora-pct').textContent=`${Math.round((piora/n)*100)}% da equipe`;
-}
- 
-function setDashFilter(type) {
-  _dashFilter=type;
-  const map={all:'kpi-all',critica:'kpi-critica',piora:'kpi-piora',melhora:'kpi-melhora'};
-  const cls={all:'kpi-active',critica:'kpi-active-rd',piora:'kpi-active-or',melhora:'kpi-active-gn'};
-  Object.keys(map).forEach(k=>{
-    const el=document.getElementById(map[k]); if(!el) return;
-    el.classList.remove('kpi-active','kpi-active-rd','kpi-active-gn','kpi-active-or');
-    if(k===type) el.classList.add(cls[k]);
-  });
-  renderDashCards();
-}
- 
-function renderDashCards() {
-  const search=(document.getElementById('dash-search')?.value||'').toLowerCase();
-  const sort=document.getElementById('dash-sort')?.value||'erros';
-  let workers=getWorkerStats();
-  if(_dashFilter==='critica') workers=workers.filter(w=>w.criticos>0);
-  else if(_dashFilter==='melhora') workers=workers.filter(w=>w.trend==='melhora');
-  else if(_dashFilter==='piora') workers=workers.filter(w=>w.trend==='piora');
-  if(search) workers=workers.filter(w=>w.nome.toLowerCase().includes(search));
-  if(sort==='erros') workers.sort((a,b)=>b.total-a.total);
-  else if(sort==='nome') workers.sort((a,b)=>a.nome.localeCompare(b.nome));
-  else if(sort==='criticos') workers.sort((a,b)=>b.criticos-a.criticos);
-  else if(sort==='media') workers.sort((a,b)=>b.avg-a.avg);
-  const master=workers.filter(w=>w.categoria==='Master');
-  const multi=workers.filter(w=>w.categoria==='MultiSkill');
-  const maxE=Math.max(...workers.map(w=>w.total),1);
-  const rankedAll=[...workers].sort((a,b)=>b.total-a.total);
-  const rankMap={}; rankedAll.forEach((w,i)=>{rankMap[w.nome]=i});
-  const gridM=document.getElementById('emp-grid-master');
-  const gridMu=document.getElementById('emp-grid-multiskill');
-  const empty=document.getElementById('emp-empty');
-  const lblM=document.getElementById('lbl-master');
-  const lblMu=document.getElementById('lbl-multi');
-  if(!workers.length){gridM.innerHTML='';gridMu.innerHTML='';empty.style.display='block';lblM.style.display='none';lblMu.style.display='none';return;}
-  empty.style.display='none';
-  lblM.style.display=master.length?'':'none';
-  lblMu.style.display=multi.length?'':'none';
-  gridM.innerHTML=master.map(w=>renderOpCard(w,rankMap,maxE)).join('');
-  gridMu.innerHTML=multi.map(w=>renderOpCard(w,rankMap,maxE)).join('');
-  document.querySelectorAll('[data-emp-card]').forEach(card=>{
-    card.addEventListener('click',function(){openDetail(decodeURIComponent(this.dataset.empCard));});
-  });
-}
- 
-function renderOpCard(w,rankMap,maxE) {
-  const rank=rankMap[w.nome]??99;
-  const rankClass=rank===0?'op-rank-1':rank===1?'op-rank-2':rank===2?'op-rank-3':'op-rank-n';
-  const rankBadge=rank===0?'🥇 Melhor desempenho':rank===1?'🥈 Segundo melhor':rank===2?'🥉 Terceiro melhor':'';
-  const cidx=Math.abs((w.nome.charCodeAt(0)||0))%AVATAR_COLORS.length;
-  const initials=w.nome.split(' ').slice(0,2).map(n=>n[0]||'').join('').toUpperCase();
-  const barPct=Math.round((w.total/maxE)*100);
-  const barColor=w.criticos>0?'#ef4444':w.trend==='melhora'?'#22c55e':w.trend==='piora'?'#f97316':'#3b82f6';
-  const trendMap={melhora:{label:'↑ Melhorando',cls:'t-dn'},piora:{label:'↓ Piorando',cls:'t-up'},estavel:{label:'→ Estável',cls:'t-fl'}};
-  const tr=trendMap[w.trend]||trendMap.estavel;
-  return `<div class="ec" data-emp-card="${encodeURIComponent(w.nome)}" style="cursor:pointer">
-    <div class="ec-stripe"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div class="op-rank ${rankClass}">${rank+1}</div>
-      <div class="op-avatar" style="background:${AVATAR_COLORS[cidx]}">${initials}</div>
-      <div style="flex:1;min-width:0">
-        <div class="ec-n" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${w.nome}</div>
-        <div class="ec-m">${w.categoria||'—'}</div>
-      </div>
-      <span class="tb ${tr.cls}">${tr.label}</span>
-    </div>
-    <div class="ec-s">
-      <div class="es"><div class="esv">${w.total}</div><div class="esl">Total</div></div>
-      <div class="es"><div class="esv" style="${w.criticos>0?'color:var(--rd)':''}">${w.criticos}</div><div class="esl">Críticos</div></div>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mt);font-family:var(--mo);margin-bottom:4px">
-      <span>Média grav.</span><span>${w.avg}</span>
-    </div>
-    <div class="op-perf-bar"><div class="op-perf-fill" style="width:${barPct}%;background:${barColor}"></div></div>
-    ${rankBadge?`<div class="op-badge-txt">${rankBadge}</div>`:''}
-  </div>`;
-}
- 
-function updateDonut() {
-  const workers=getWorkerStats();
-  const melh=workers.filter(w=>w.trend==='melhora').length;
-  const piora=workers.filter(w=>w.trend==='piora').length;
-  const crit=workers.filter(w=>w.criticos>0).length;
-  const est=Math.max(workers.length-melh-piora,0);
-  const total=workers.length;
-  document.getElementById('donut-total-num').textContent=total;
-  const data=[{label:'Melhorando',val:melh,color:'#22c55e'},{label:'Estável',val:est,color:'#3b82f6'},{label:'Piorando',val:piora,color:'#f97316'},{label:'Críticos',val:crit,color:'#ef4444'}];
-  document.getElementById('donut-legend').innerHTML=data.map(d=>`<div class="dl-item"><div class="dl-dot" style="background:${d.color}"></div><div class="dl-label">${d.label}</div><div class="dl-val">${d.val}</div><div class="dl-pct">${total?Math.round((d.val/total)*100):0}%</div></div>`).join('');
-  if(_donutChart) _donutChart.destroy();
-  const ctx=document.getElementById('donut-chart').getContext('2d');
-  _donutChart=new Chart(ctx,{type:'doughnut',data:{labels:data.map(d=>d.label),datasets:[{data:data.map(d=>d.val||0.001),backgroundColor:data.map(d=>d.color),borderColor:'#111827',borderWidth:3,hoverBorderWidth:4,hoverOffset:6}]},options:{responsive:true,maintainAspectRatio:false,cutout:'72%',plugins:{legend:{display:false},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.12)',borderWidth:1,padding:10,callbacks:{label:c=>` ${c.label}: ${c.raw===0.001?0:c.raw} operadores`}}},animation:{animateRotate:true,duration:700}}});
-}
- 
-function setChartPeriod(days,btn) {
-  _chartPeriod=days;
-  document.querySelectorAll('.ppill').forEach(p=>p.classList.remove('on'));
-  btn.classList.add('on');
-  updateLineChart();
-}
- 
-function updateLineChart() {
-  const now=new Date(), labels=[], totals=[], critics=[];
-  for(let i=_chartPeriod-1;i>=0;i--) {
-    const d=new Date(now); d.setDate(d.getDate()-i);
-    labels.push(d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}));
-    const ds=new Date(d); ds.setHours(0,0,0,0);
-    const de=new Date(d); de.setHours(23,59,59,999);
-    const day=_allErrors.filter(e=>{const t=new Date(e.ts*1000);return t>=ds&&t<=de});
-    totals.push(day.length); critics.push(day.filter(e=>e.gravidade==='critica').length);
-  }
-  if(_lineChart) _lineChart.destroy();
-  const ctx=document.getElementById('line-chart').getContext('2d');
-  const gP=ctx.createLinearGradient(0,0,0,185); gP.addColorStop(0,'rgba(139,92,246,.25)'); gP.addColorStop(1,'rgba(139,92,246,0)');
-  const gR=ctx.createLinearGradient(0,0,0,185); gR.addColorStop(0,'rgba(239,68,68,.18)'); gR.addColorStop(1,'rgba(239,68,68,0)');
-  _lineChart=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'Total de erros',data:totals,borderColor:'#8b5cf6',backgroundColor:gP,borderWidth:2.5,pointRadius:4,pointBackgroundColor:'#8b5cf6',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true},{label:'Erros críticos',data:critics,borderColor:'#ef4444',backgroundColor:gR,borderWidth:2,pointRadius:4,pointBackgroundColor:'#ef4444',pointBorderColor:'#111827',pointBorderWidth:2,pointHoverRadius:6,tension:.4,fill:true}]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#94a3b8',font:{size:10},boxWidth:8,padding:14}},tooltip:{backgroundColor:'#111827',titleColor:'#f1f5f9',bodyColor:'#94a3b8',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,padding:10}},scales:{x:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false}},y:{grid:{color:'rgba(255,255,255,.04)',drawBorder:false},ticks:{color:'#64748b',font:{size:10}},border:{display:false},beginAtZero:true}},animation:{duration:500}}});
-}
- 
-async function refreshDashboard() {
-  await loadDashData();
-  const workers=getWorkerStats();
-  updateKPIs(workers); updateDonut(); updateLineChart(); renderDashCards();
-}
- 
-document.getElementById('btn-refresh-dash')?.addEventListener('click',async()=>{await refreshDashboard();showToast('Dados atualizados!','ok');});
-document.addEventListener('DOMContentLoaded',()=>{setTimeout(refreshDashboard,400);});
- 
-async function criarAdmin() {
-  const usuario=document.getElementById('adm-usuario').value.trim();
-  const senha=document.getElementById('adm-senha').value;
-  const podeCriar=document.getElementById('adm-pode-criar').checked;
-  const msgEl=document.getElementById('msg-adm-criar');
-  if(!usuario||!senha){msgEl.style.color='var(--rd)';msgEl.textContent='Preencha usuário e senha.';return}
-  try {
-    const dados=await _apiFetch('/admins',{method:'POST',body:JSON.stringify({usuario,senha,pode_criar_admins:podeCriar})});
-    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;document.getElementById('adm-usuario').value='';document.getElementById('adm-senha').value='';document.getElementById('adm-pode-criar').checked=false;carregarAdmins();}
-    else{msgEl.style.color='var(--rd)';msgEl.textContent=(dados&&dados.mensagem)||'Erro ao criar admin.'}
-  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar ao servidor.'}
-  setTimeout(()=>{msgEl.textContent=''},4000);
-}
- 
-async function deletarAdmin(usuario) {
-  if(!confirm('Remover o admin "'+usuario+'"?')) return;
-  const msgEl=document.getElementById('msg-adm-del');
-  try {
-    const dados=await _apiFetch('/admins/'+encodeURIComponent(usuario),{method:'DELETE'});
-    if(dados&&dados.status==='sucesso'){msgEl.style.color='var(--gn)';msgEl.textContent=dados.mensagem;carregarAdmins();}
-    else{msgEl.style.color='var(--rd)';msgEl.textContent=dados?dados.mensagem:'Erro.'}
-  } catch{msgEl.style.color='var(--rd)';msgEl.textContent='Erro ao conectar.'}
-  setTimeout(()=>{msgEl.textContent=''},4000);
-}
- 
-async function carregarAdmins() {
-  try {
-    const dados=await _apiFetch('/admins');
-    const tbody=document.getElementById('adm-tbody');
-    const thAcao=document.getElementById('th-acao');
-    const isSA=window._role==='superadmin';
-    if(isSA) thAcao.style.display='';
-    tbody.innerHTML='';
-    (dados.admins||[]).forEach(a=>{
-      const tr=document.createElement('tr');
-      const isMe=a.usuario===window._usuario;
-      const podeEx=isSA&&a.role!=='superadmin'&&!isMe;
-      tr.innerHTML=`<td>${a.usuario}${isMe?' <span style="font-size:10px;color:var(--mt)">(você)</span>':''}</td><td><span class="role-pill role-${a.role}">${a.role}</span></td>${isSA?`<td>${podeEx?`<button class="btn b-rd" style="padding:4px 12px;font-size:11px" onclick="deletarAdmin('${a.usuario}')">Remover</button>`:'—'}</td>`:''}`;
-      tbody.appendChild(tr);
+  const API = window.location.origin;
+  var selSev  = '';
+  var myChart = null;
+  var SEV_W   = { baixa: 1, media: 2, alta: 3, critica: 4 };
+  var SEV_CLS = { baixa: 's-bx', media: 's-md', alta: 's-al', critica: 's-cr' };
+
+  // ── API helper ─────────────────────────────────────────────────────────────
+  async function apiFetch(path, options = {}) {
+    const res = await fetch(API + path, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      ...options
     });
-  } catch{console.error('Erro ao carregar admins.')}
-}
- 
-document.getElementById('btn-nav-admins')?.addEventListener('click',carregarAdmins);
-</script>
-</body>
-</html>
- 
-<button class="mobile-menu-btn" id="mobile-menu">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-    <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
-  </svg>
-</button>
-<div class="sidebar-overlay" id="sidebar-overlay"></div>
- 
-<div class="app">
-  <aside class="sidebar" id="sidebar">
-    <div class="logo">
-      <div class="logo-icon">
-        <img src="img/logo.png" alt="ErrTrack" width="34" height="34" style="object-fit:contain;filter:drop-shadow(0 0 8px rgba(139,92,246,0.6))">
-        <div class="logo-text">
-          <div class="logo-name">ErrTrack</div>
-          <div class="logo-sub">QA System</div>
-        </div>
-      </div>
-    </div>
-    <div class="sb-sec">Principal</div>
-    <button class="ni on" data-page="painel">
-      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
-      Painel Geral
-    </button>
-    <button class="ni" data-page="funcionarios">
-      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Funcionários
-    </button>
-    <button class="ni" data-page="registrar">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      Registrar Erro
-    </button>
-    <button class="ni ni-super" data-page="admins" id="btn-nav-admins" style="display:none">
-      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      Gestão de Admins <span class="sa-badge">SUPER</span>
-    </button>
-    <hr class="sb-sep">
-  </aside>
- 
-  <main class="main">
- 
-    <!-- PAINEL GERAL -->
-    <div id="pg-painel" class="pg on">
-      <div id="pn-list">
-        <div class="ph">
-          <div>
-            <div class="pt">Painel Geral</div>
-            <div class="ps">visão consolidada da equipe em tempo real</div>
-          </div>
-          <div class="ha">
-            <button class="btn b-ol" id="btn-refresh-dash">↺ Atualizar</button>
-            <button class="btn b-gn" id="btn-export-top">⬇ Exportar Relatório</button>
-          </div>
-        </div>
- 
-        <div class="kpi-row" style="margin-bottom:20px">
-          <div class="kpi k-ac" id="kpi-all" onclick="setDashFilter('all')">
-            <div class="kl">Total de Erros</div>
-            <div class="kv" id="kv-total">0</div>
-            <div class="ps" style="margin-top:6px">todos os registros</div>
-          </div>
-          <div class="kpi k-rd" id="kpi-critica" onclick="setDashFilter('critica')">
-            <div class="kl">Críticos</div>
-            <div class="kv" id="kv-critica">0</div>
-            <div class="ps" id="kv-critica-pct" style="margin-top:6px">0% do total</div>
-          </div>
-          <div class="kpi k-or" id="kpi-piora" onclick="setDashFilter('piora')">
-            <div class="kl">Piorando</div>
-            <div class="kv" id="kv-piora">0</div>
-            <div class="ps" id="kv-piora-pct" style="margin-top:6px">operadores</div>
-          </div>
-          <div class="kpi k-gn" id="kpi-melhora" onclick="setDashFilter('melhora')">
-            <div class="kl">Melhorando</div>
-            <div class="kv" id="kv-melhora">0</div>
-            <div class="ps" id="kv-melhora-pct" style="margin-top:6px">operadores</div>
-          </div>
-        </div>
- 
-        <div class="charts-row">
-          <div class="chart-card">
-            <div class="chart-card-title">Distribuição dos Operadores</div>
-            <div class="chart-card-sub">Status atual da equipe</div>
-            <div class="donut-wrap">
-              <div class="donut-canvas-wrap">
-                <canvas id="donut-chart"></canvas>
-                <div class="donut-center">
-                  <div class="donut-total-num" id="donut-total-num">0</div>
-                  <div class="donut-total-lbl">Total</div>
-                </div>
-              </div>
-              <div class="donut-legend" id="donut-legend"></div>
-            </div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-card-title">
-              Evolução dos Erros
-              <div class="period-pills">
-                <button class="ppill on" onclick="setChartPeriod(7,this)">7d</button>
-                <button class="ppill" onclick="setChartPeriod(30,this)">30d</button>
-                <button class="ppill" onclick="setChartPeriod(90,this)">90d</button>
-              </div>
-            </div>
-            <div class="chart-card-sub">Total de erros e erros críticos por dia</div>
-            <div class="line-canvas-wrap"><canvas id="line-chart"></canvas></div>
-          </div>
-        </div>
- 
-        <div class="filter-row">
-          <div class="filter-left">
-            <div class="el-ttl" style="margin:0">Desempenho dos Operadores</div>
-          </div>
-          <div class="filter-right">
-            <div class="search-wrap">
-              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input class="search-input" id="dash-search" placeholder="Buscar operador..." oninput="renderDashCards()">
-            </div>
-            <select class="sort-select" id="dash-sort" onchange="renderDashCards()">
-              <option value="erros">Mais erros</option>
-              <option value="nome">Nome A-Z</option>
-              <option value="criticos">Mais críticos</option>
-              <option value="media">Maior média</option>
-            </select>
-          </div>
-        </div>
- 
-        <div class="el-ttl" id="lbl-master" style="margin-top:6px">Master</div>
-        <div class="eg" id="emp-grid-master"></div>
-        <div class="el-ttl" style="margin-top:20px" id="lbl-multi">MultiSkill</div>
-        <div class="eg" id="emp-grid-multiskill"></div>
-        <div class="empty" id="emp-empty" style="display:none">
-          <div class="empty-i">👥</div>
-          <h3>Nenhum funcionário ainda</h3>
-          <p>Registre o primeiro erro para começar a monitorar.</p>
-        </div>
-      </div>
- 
-      <div id="pn-detail" style="display:none">
-        <button class="bk" id="btn-back">← Voltar ao painel</button>
-        <div class="ph">
-          <div>
-            <div class="pt" id="d-name">—</div>
-            <div class="ps" id="d-cargo">—</div>
-          </div>
-          <span id="d-trend"></span>
-        </div>
-        <div class="ph" id="d-pausas-wrap" style="display:none;margin-top:-8px">
-          <div class="ps">⏱ Pausas: <span id="d-pausas">—</span></div>
-        </div>
-        <div class="mr">
-          <div class="kpi"><div class="kl">Total</div><div class="kv" id="dm-total">0</div></div>
-          <div class="kpi"><div class="kl">Média Grav.</div><div class="kv" id="dm-avg">0</div></div>
-          <div class="kpi"><div class="kl">Último Período</div><div class="kv" style="font-size:14px" id="dm-period">—</div></div>
-          <div class="kpi"><div class="kl">Críticos</div><div class="kv" id="dm-critica">0</div></div>
-        </div>
-        <div class="chart-box">
-          <div class="ct">Gravidade média por período</div>
-          <div class="cw"><canvas id="chart-canvas"></canvas></div>
-        </div>
-        <div class="el-ttl">Histórico de Erros</div>
-        <div class="el" id="err-list"></div>
-      </div>
-    </div>
- 
-    <!-- FUNCIONÁRIOS -->
-    <div id="pg-funcionarios" class="pg">
-      <div class="ph"><div><div class="pt">Cadastro de Funcionário</div><div class="ps">adicione um novo operador ao sistema</div></div></div>
-      <div class="fc">
-        <div class="fg2">
-          <div class="fg"><label class="fl">Nome *</label><input class="fi" id="funcionarionome" placeholder="Nome completo" autocomplete="off"></div>
-          <div class="fg"><label class="fl">Especialização</label><input class="fi" id="especializacao" placeholder="Ex: Suporte, SAC..." autocomplete="off"></div>
-          <div class="fg">
-            <label class="fl">Período</label>
-            <select class="fi" id="periodotrabalho">
-              <option value="" disabled selected>Selecione o período</option>
-              <option value="08:00-14:00">08:00 às 14:00</option>
-              <option value="13:00-19:00">13:00 às 19:00</option>
-              <option value="14:00-20:00">14:00 às 20:00</option>
-              <option value="17:40-00:00">17:40 às 00:00</option>
-              <option value="12x36">12x36</option>
-            </select>
-          </div>
-          <div class="fg">
-            <label class="fl">Categoria *</label>
-            <select class="fi" id="categoria">
-              <option value="" disabled selected>Selecione a categoria</option>
-              <option value="Master">Master</option>
-              <option value="MultiSkill">MultiSkill</option>
-            </select>
-          </div>
-          <div class="fg full"><label class="fl">Observações</label><textarea class="fta" id="observacoes" placeholder="Observações opcionais..."></textarea></div>
-          <div class="fg"><label class="fl">Pausa 1 (10 min - entrada)</label><input class="fi" id="pausa1" placeholder="Ex: 08:05 - 08:15" autocomplete="off"></div>
-          <div class="fg"><label class="fl">Pausa 2 (20 min - meio do turno)</label><input class="fi" id="pausa2" placeholder="Ex: 11:00 - 11:20" autocomplete="off"></div>
-          <div class="fg"><label class="fl">Pausa 3 (10 min - saída)</label><input class="fi" id="pausa3" placeholder="Ex: 13:50 - 14:00" autocomplete="off"></div>
-        </div>
-        <center><button class="btn b-ac" onclick="pegaFuncionario()">Salvar Funcionário</button></center>
-        <div class="sm" id="save-msg-func"></div>
-      </div>
-      <br>
-      <div class="ph"><div><div class="pt">Importar Pausas via Excel</div><div class="ps">atualiza pausa 1, 2 e 3 dos funcionários já cadastrados, casando pelo nome</div></div></div>
-      <div class="fc">
-        <div class="fg">
-          <label class="fl">Arquivo (.xlsx) — colunas: Nome, Pausa 1, Pausa 2, Pausa 3</label>
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-            <input class="fi" type="file" id="arquivo-pausas" accept=".xlsx" style="flex:1;min-width:200px">
-            <button class="btn b-ac" onclick="importarPausas()">Importar</button>
-          </div>
-        </div>
-        <div class="sm" id="msg-import-pausas"></div>
-      </div>
-      <br>
-      <div class="ph"><div><div class="pt">Editar / Excluir Funcionário</div></div></div>
-      <div class="fc">
-        <div class="fg">
-          <label class="fl">Buscar pelo nome</label>
-          <div style="display:flex;gap:10px">
-            <input class="fi" id="busca-nome" placeholder="Digite o nome..." style="flex:1">
-            <button class="btn b-ac" onclick="buscarFuncionario()">Buscar</button>
-          </div>
-        </div>
-        <div id="form-edicao" style="display:none">
-          <div class="fg2" style="margin-top:16px">
-            <div class="fg"><label class="fl">Nome</label><input class="fi" id="edit-nome"></div>
-            <div class="fg"><label class="fl">Especialização</label><input class="fi" id="edit-espec"></div>
-            <div class="fg">
-              <label class="fl">Período</label>
-              <select class="fi" id="edit-periodo">
-                <option value="08:00-14:00">08:00 às 14:00</option>
-                <option value="13:00-19:00">13:00 às 19:00</option>
-                <option value="14:00-20:00">14:00 às 20:00</option>
-                <option value="17:40-00:00">17:40 às 00:00</option>
-                <option value="12x36">12x36</option>
-              </select>
-            </div>
-            <div class="fg">
-              <label class="fl">Categoria</label>
-              <select class="fi" id="edit-cat">
-                <option value="Master">Master</option>
-                <option value="MultiSkill">MultiSkill</option>
-              </select>
-            </div>
-            <div class="fg full"><label class="fl">Observações</label><textarea class="fta" id="edit-obs"></textarea></div>
-            <div class="fg"><label class="fl">Pausa 1 (10 min - entrada)</label><input class="fi" id="edit-pausa1" placeholder="Ex: 08:05 - 08:15"></div>
-            <div class="fg"><label class="fl">Pausa 2 (20 min - meio do turno)</label><input class="fi" id="edit-pausa2" placeholder="Ex: 11:00 - 11:20"></div>
-            <div class="fg"><label class="fl">Pausa 3 (10 min - saída)</label><input class="fi" id="edit-pausa3" placeholder="Ex: 13:50 - 14:00"></div>
-          </div>
-          <div style="display:flex;gap:10px;justify-content:center">
-            <button class="btn b-ac" onclick="salvarEdicao()">Salvar alterações</button>
-            <button class="btn b-rd" onclick="excluirFuncionario()">Excluir funcionário</button>
-          </div>
-          <div class="sm" id="msg-edicao"></div>
-        </div>
-      </div>
-    </div>
- 
-    <!-- REGISTRAR ERRO -->
-    <div id="pg-registrar" class="pg">
-      <div class="ph"><div><div class="pt">Registrar Erro</div><div class="ps">adicione um novo registro manualmente</div></div></div>
-      <div class="fc">
-        <div class="fg2">
-          <div class="fg"><label class="fl">Master</label><select class="fi" id="f-master"><option value="">— Selecione —</option></select></div>
-          <div class="fg"><label class="fl">MultiSkill</label><select class="fi" id="f-multiskill"><option value="">— Selecione —</option></select></div>
-          <div class="fg full"><label class="fl">Descrição do erro *</label><textarea class="fta" id="f-desc" placeholder="Descreva detalhadamente o que aconteceu..."></textarea></div>
-          <div class="fg full">
-            <label class="fl">Gravidade *</label>
-            <div class="sp-pick">
-              <div class="so" data-sev="baixa"><span class="si">🟢</span>Baixa</div>
-              <div class="so" data-sev="media"><span class="si">🟡</span>Média</div>
-              <div class="so" data-sev="alta"><span class="si">🟠</span>Alta</div>
-              <div class="so" data-sev="critica"><span class="si">🔴</span>Crítica</div>
-            </div>
-          </div>
-        </div>
-        <center><button class="btn b-ac" id="btn-save-error">Salvar Registro</button></center>
-        <div class="sm" id="save-msg-error"></div>
-      </div>
-    </div>
- 
-    <!-- GESTÃO DE ADMINS -->
-    <div id="pg-admins" class="pg">
-      <div class="ph"><div><div class="pt">Gestão de Admins <span class="sa-badge">SUPER</span></div><div class="ps">gerencie quem tem acesso ao sistema</div></div></div>
-      <div class="fc">
-        <div class="sep-section">Criar novo admin</div>
-        <div class="fg2">
-          <div class="fg"><label class="fl">Usuário</label><input class="fi" id="adm-usuario" placeholder="Login do novo admin" autocomplete="off"></div>
-          <div class="fg"><label class="fl">Senha</label><input class="fi" type="password" id="adm-senha" placeholder="Senha forte"></div>
-        </div>
-        <div class="toggle-wrap" id="toggle-full-wrap">
-          <label class="toggle"><input type="checkbox" id="adm-pode-criar"><span class="toggle-slider"></span></label>
-          <label for="adm-pode-criar">Pode criar/remover outros admins</label>
-        </div>
-        <center><button class="btn b-ac" onclick="criarAdmin()">Criar Admin</button></center>
-        <div class="sm" id="msg-adm-criar"></div>
-      </div>
-      <div class="fc" style="margin-top:20px">
-        <div class="sep-section">Admins cadastrados</div>
-        <table class="adm-table" id="adm-table">
-          <thead><tr><th>Usuário</th><th>Permissão</th><th id="th-acao" style="display:none">Ação</th></tr></thead>
-          <tbody id="adm-tbody"></tbody>
-        </table>
-        <div class="sm" id="msg-adm-del"></div>
-      </div>
-    </div>
- 
-  </main>
-</div>
- 
-<div class="toast" id="toast"></div>
-<button class="theme-btn" id="theme-btn" title="Alternar tema">🌙</button>
- 
-<script src="/js/script.js"></script>
-<script src="/js/conectaapi.js"></script>
+    if (res.status === 401) { window.location.href = '/'; return null; }
+    if (res.status === 403) { showToast('Sem permissão para esta ação.', 'er'); return null; }
+    return res.json();
+  }
+
+  // ── navegação ──────────────────────────────────────────────────────────────
+  function goTo(page) {
+    document.querySelectorAll('.pg').forEach(p => p.classList.remove('on'));
+    const pg = document.getElementById('pg-' + page);
+    if (pg) pg.classList.add('on');
+    document.querySelectorAll('.ni[data-page]').forEach(b => {
+      b.classList.toggle('on', b.dataset.page === page);
+    });
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.style.display = 'none';
+    if (page === 'painel') showList();
+  }
+
+  window.goTo = goTo;
+
+  function initNavigation() {
+    document.querySelectorAll('.ni[data-page]').forEach(btn => {
+      btn.addEventListener('click', function () { goTo(this.dataset.page); });
+    });
+    const mBtn    = document.getElementById('mobile-menu');
+    const overlay = document.getElementById('sidebar-overlay');
+    const sidebar = document.getElementById('sidebar');
+    if (mBtn) mBtn.addEventListener('click', () => {
+      if (sidebar) sidebar.classList.toggle('open');
+      if (overlay) overlay.style.display = sidebar.classList.contains('open') ? 'block' : 'none';
+    });
+    if (overlay) overlay.addEventListener('click', () => {
+      if (sidebar) sidebar.classList.remove('open');
+      overlay.style.display = 'none';
+    });
+  }
+
+  // ── dashboard ──────────────────────────────────────────────────────────────
+  async function renderDashboard() {
+    const dados = await apiFetch('/erros');
+    if (!dados) return;
+    const erros = dados.erros || [];
+    const DB = {};
+    erros.forEach(e => {
+      if (!DB[e.nomefuncionario]) DB[e.nomefuncionario] = { categoria: e.cat_func || e.categoria || '', errors: [] };
+      DB[e.nomefuncionario].errors.push(e);
+    });
+
+    // Atualiza grids via renderDashCards do HTML inline
+    if (typeof renderDashCards === 'function') renderDashCards();
+  }
+
+  window.renderDashboard = renderDashboard;
+
+  // ── detalhe do funcionário ─────────────────────────────────────────────────
+  async function openDetail(nome) {
+    const dados = await apiFetch('/erros/' + encodeURIComponent(nome));
+    if (!dados) return;
+    const erros = dados.erros || [];
+
+    // Esconde lista, mostra detalhe
+    const pnList   = document.getElementById('pn-list');
+    const pnDetail = document.getElementById('pn-detail');
+    if (pnList)   pnList.style.display   = 'none';
+    if (pnDetail) pnDetail.style.display = 'block';
+
+    setText('d-name',    nome);
+    setText('dm-total',  erros.length);
+    setText('dm-avg',    getAvg(erros));
+    setText('dm-critica',erros.filter(e => e.gravidade === 'critica').length);
+
+    const periods = [...new Set(erros.map(e => e.periodo).filter(Boolean))];
+    setText('dm-period', periods[periods.length - 1] || '—');
+
+    const tr = getTrend(erros);
+    const ti = tInfo(tr);
+    const trendEl = document.getElementById('d-trend');
+    if (trendEl) {
+      trendEl.className = 'tb ' + (tr === 'up' ? 't-up' : tr === 'down' ? 't-dn' : 't-fl');
+      trendEl.textContent = ti.icon + ' ' + ti.label;
+    }
+
+    renderDetailChart(erros);
+    renderErrList(nome, erros);
+  }
+
+  window.openDetail = openDetail;
+
+  function renderDetailChart(erros) {
+    const sorted = erros.slice().sort((a, b) => a.ts - b.ts);
+    const byDate = {};
+    sorted.forEach(e => {
+      const d = new Date(e.ts * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      if (!byDate[d]) byDate[d] = { sum: 0, cnt: 0, criticos: 0 };
+      byDate[d].sum += (SEV_W[e.gravidade] || 1);
+      byDate[d].cnt++;
+      if (e.gravidade === 'critica') byDate[d].criticos++;
+    });
+
+    const labs  = Object.keys(byDate);
+    const avgs  = labs.map(l => +(byDate[l].sum / byDate[l].cnt).toFixed(2));
+    const crits = labs.map(l => byDate[l].criticos);
+
+    if (myChart) { myChart.destroy(); myChart = null; }
+    const canvas = document.getElementById('chart-canvas');
+    if (!canvas || typeof Chart === 'undefined') return;
+    const ctx = canvas.getContext('2d');
+
+    const gradP = ctx.createLinearGradient(0, 0, 0, 180);
+    gradP.addColorStop(0, 'rgba(139,92,246,.25)');
+    gradP.addColorStop(1, 'rgba(139,92,246,0)');
+
+    myChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labs,
+        datasets: [
+          {
+            label: 'Gravidade Média',
+            data: avgs,
+            borderColor: '#8b5cf6',
+            backgroundColor: gradP,
+            tension: 0.4, fill: true,
+            pointRadius: 4, pointBackgroundColor: '#8b5cf6',
+            pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6
+          },
+          {
+            label: 'Críticos',
+            data: crits,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.08)',
+            tension: 0.4, fill: true,
+            pointRadius: 4, pointBackgroundColor: '#ef4444',
+            pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 8 } },
+          tooltip: { backgroundColor: '#111827', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 }
+        },
+        scales: {
+          y: {
+            min: 0, max: 4,
+            ticks: {
+              color: '#64748b', font: { size: 10 },
+              callback: v => ['', 'Baixa', 'Média', 'Alta', 'Crítica'][Math.round(v)] || ''
+            },
+            grid: { color: 'rgba(255,255,255,.04)' }
+          },
+          x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } }
+        }
+      }
+    });
+  }
+
+  function renderErrList(nome, erros) {
+    const wrap = document.getElementById('err-list');
+    if (!wrap) return;
+    const sorted = erros.slice().sort((a, b) => b.ts - a.ts);
+    if (!sorted.length) {
+      wrap.innerHTML = '<div style="font-size:12px;color:var(--mt);padding:12px 0;">Nenhum erro registrado ainda.</div>';
+      return;
+    }
+    wrap.innerHTML = sorted.map(e => {
+      const cls  = SEV_CLS[e.gravidade] || 's-md';
+      const data = new Date(e.ts * 1000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const hora = new Date(e.ts * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const meta = data + ' ' + hora + (e.periodo ? ' · ' + htmlEsc(e.periodo) : '') + (e.categoria ? ' · ' + htmlEsc(e.categoria) : '');
+      return '<div class="er">'
+        + '<span class="sp ' + cls + '">' + (e.gravidade || '?').toUpperCase() + '</span>'
+        + '<div style="flex:1"><div class="ed">' + htmlEsc(e.descricao) + '</div><div class="em">' + meta + '</div></div>'
+        + '<button class="db" data-erro-id="' + e.id + '" data-emp-nome="' + encodeURIComponent(nome) + '" title="Remover">×</button>'
+        + '</div>';
+    }).join('');
+
+    wrap.querySelectorAll('[data-erro-id]').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        if (!confirm('Deseja remover este erro?')) return;
+        const id   = this.dataset.erroId;
+        const nome = decodeURIComponent(this.dataset.empNome);
+        await apiFetch('/erros/' + id, { method: 'DELETE' });
+        openDetail(nome);
+      });
+    });
+  }
+
+  function showList() {
+    const pnList   = document.getElementById('pn-list');
+    const pnDetail = document.getElementById('pn-detail');
+    if (pnList)   pnList.style.display   = 'block';
+    if (pnDetail) pnDetail.style.display = 'none';
+    if (typeof refreshDashboard === 'function') refreshDashboard();
+  }
+
+  window.showList = showList;
+
+  // ── registrar erro ─────────────────────────────────────────────────────────
+  function initForms() {
+    const SEV_SEL = { baixa: 'a-bx', media: 'a-md', alta: 'a-al', critica: 'a-cr' };
+    document.querySelectorAll('.sp-pick .so').forEach(btn => {
+      btn.addEventListener('click', function () {
+        selSev = this.dataset.sev;
+        document.querySelectorAll('.sp-pick .so').forEach(b => b.classList.remove('a-bx', 'a-md', 'a-al', 'a-cr'));
+        this.classList.add(SEV_SEL[selSev]);
+      });
+    });
+    const btnSaveError = document.getElementById('btn-save-error');
+    if (btnSaveError) btnSaveError.addEventListener('click', saveError);
+  }
+
+  async function saveError() {
+    const nomeMaster = val('f-master');
+    const nomeMulti  = val('f-multiskill');
+    const nome       = nomeMaster || nomeMulti;
+    const desc       = val('f-desc');
+    const msgEl      = document.getElementById('save-msg-error');
+
+    if (!nome || !desc || !selSev) {
+      if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Selecione um operador, descreva o erro e escolha a gravidade.'; }
+      return;
+    }
+
+    const descSanitizada = desc.replace(/[<>'"]/g, '');
+    const categoria = nomeMaster ? 'Master' : 'MultiSkill';
+
+    try {
+      const dados = await apiFetch('/erros', {
+        method: 'POST',
+        body: JSON.stringify({ nomefuncionario: nome, periodo: '', descricao: descSanitizada, gravidade: selSev, categoria })
+      });
+      if (dados && dados.status === 'sucesso') {
+        if (msgEl) { msgEl.style.color = 'green'; msgEl.textContent = '✓ Erro registrado com sucesso!'; }
+        document.getElementById('f-master').selectedIndex    = 0;
+        document.getElementById('f-multiskill').selectedIndex = 0;
+        setVal('f-desc', '');
+        selSev = '';
+        document.querySelectorAll('.sp-pick .so').forEach(b => b.classList.remove('a-bx', 'a-md', 'a-al', 'a-cr'));
+        setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3200);
+      }
+    } catch {
+      if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar ao servidor.'; }
+    }
+  }
+
+  // ── exportar ───────────────────────────────────────────────────────────────
+  function initSync() {
+    const btnExport = document.getElementById('btn-export-top');
+    if (btnExport) btnExport.addEventListener('click', () => { window.location.href = '/exportar-excel'; });
+  }
+
+  // ── tema ───────────────────────────────────────────────────────────────────
+  function initTheme() {
+    const btn   = document.getElementById('theme-btn');
+    const saved = localStorage.getItem('errtrack_theme') || 'dark';
+    if (saved === 'light') { document.body.classList.add('light'); if (btn) btn.textContent = '☀️'; }
+    if (btn) btn.addEventListener('click', () => {
+      const isLight = document.body.classList.toggle('light');
+      localStorage.setItem('errtrack_theme', isLight ? 'light' : 'dark');
+      btn.textContent = isLight ? '☀️' : '🌙';
+    });
+  }
+
+  // ── funcionários ───────────────────────────────────────────────────────────
+  async function carregarFuncionarios() {
+    try {
+      const dados = await apiFetch('/funcionarios');
+      const lista = dados ? (dados.funcionarios || []) : [];
+      const selectMaster = document.getElementById('f-master');
+      const selectMulti  = document.getElementById('f-multiskill');
+      if (selectMaster) {
+        selectMaster.innerHTML = '<option value="">— Selecione —</option>';
+        lista.filter(f => f.categoria === 'Master').forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.nomecompleto; opt.textContent = f.nomecompleto;
+          selectMaster.appendChild(opt);
+        });
+      }
+      if (selectMulti) {
+        selectMulti.innerHTML = '<option value="">— Selecione —</option>';
+        lista.filter(f => f.categoria === 'MultiSkill').forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.nomecompleto; opt.textContent = f.nomecompleto;
+          selectMulti.appendChild(opt);
+        });
+      }
+    } catch { console.error('Erro ao carregar funcionários.'); }
+  }
+
+  // ── utilitários ────────────────────────────────────────────────────────────
+  function getTrend(e) {
+    if (!e || e.length < 2) return 'flat';
+    const h  = Math.floor(e.length / 2);
+    const a1 = e.slice(0, h).reduce((s, x) => s + (SEV_W[x.gravidade] || 1), 0) / h;
+    const a2 = e.slice(h).reduce((s, x) => s + (SEV_W[x.gravidade] || 1), 0) / (e.length - h);
+    const diff = a2 - a1;
+    if (diff > 0.3)  return 'up';
+    if (diff < -0.3) return 'down';
+    return 'flat';
+  }
+
+  function getAvg(e) {
+    if (!e || !e.length) return '0';
+    return (e.reduce((s, x) => s + (SEV_W[x.gravidade] || 1), 0) / e.length).toFixed(1);
+  }
+
+  function tInfo(t) {
+    return { up: { label: 'Piorando', icon: '↑' }, down: { label: 'Melhorando', icon: '↓' }, flat: { label: 'Estável', icon: '→' } }[t] || { label: 'Estável', icon: '→' };
+  }
+
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'toast ' + (type === 'ok' ? 't-ok' : type === 'er' ? 't-er' : 't-wn') + ' on';
+    clearTimeout(t._tid);
+    t._tid = setTimeout(() => t.classList.remove('on'), 3600);
+  }
+
+  window.showToast = showToast;
+
+  function htmlEsc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  window.htmlEsc = htmlEsc;
+
+  function val(id)       { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+  function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
+
+  // ── funcionários: cadastro, edição, exclusão, pausas ──────────────────────
+  async function pegaFuncionario() {
+    const nome  = val('funcionarionome');
+    const espec = val('especializacao');
+    const per   = val('periodotrabalho');
+    const cat   = val('categoria');
+    const obs   = val('observacoes');
+    const p1    = val('pausa1');
+    const p2    = val('pausa2');
+    const p3    = val('pausa3');
+    const msgEl = document.getElementById('save-msg-func');
+    if (!nome || !cat) {
+      msgEl.style.color = 'red'; msgEl.textContent = 'Nome e categoria são obrigatórios.'; return;
+    }
+    try {
+      const dados = await apiFetch('/funcionarios', {
+        method: 'POST',
+        body: JSON.stringify({ nomecompleto: nome, especializacao: espec, periodotrabalho: per, categoria: cat, observacoes: obs, pausa1: p1, pausa2: p2, pausa3: p3 })
+      });
+      if (dados && dados.status === 'sucesso') {
+        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário salvo!';
+        ['funcionarionome','especializacao','observacoes','pausa1','pausa2','pausa3'].forEach(id => setVal(id, ''));
+        document.getElementById('periodotrabalho').selectedIndex = 0;
+        document.getElementById('categoria').selectedIndex = 0;
+        carregarFuncionarios();
+      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao salvar.'; }
+    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  }
+
+  window.pegaFuncionario = pegaFuncionario;
+
+  async function buscarFuncionario() {
+    const nome  = val('busca-nome');
+    const msgEl = document.getElementById('msg-edicao');
+    const form  = document.getElementById('form-edicao');
+    if (!nome) { msgEl.style.color = 'red'; msgEl.textContent = 'Digite um nome para buscar.'; return; }
+    try {
+      const dados = await apiFetch('/funcionarios');
+      const lista = dados ? (dados.funcionarios || []) : [];
+      const func  = lista.find(f => f.nomecompleto.toLowerCase().includes(nome.toLowerCase()));
+      if (!func) { msgEl.style.color = 'red'; msgEl.textContent = 'Funcionário não encontrado.'; form.style.display = 'none'; return; }
+      form.style.display = 'block';
+      setVal('edit-nome',   func.nomecompleto);
+      setVal('edit-espec',  func.especializacao || '');
+      setVal('edit-obs',    func.observacoes || '');
+      setVal('edit-pausa1', func.pausa1 || '');
+      setVal('edit-pausa2', func.pausa2 || '');
+      setVal('edit-pausa3', func.pausa3 || '');
+      const selPer = document.getElementById('edit-periodo');
+      if (selPer) selPer.value = func.periodotrabalho || '';
+      const selCat = document.getElementById('edit-cat');
+      if (selCat) selCat.value = func.categoria || '';
+      form.dataset.funcId = func.id;
+      msgEl.textContent = '';
+    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao buscar.'; }
+  }
+
+  window.buscarFuncionario = buscarFuncionario;
+
+  async function salvarEdicao() {
+    const form  = document.getElementById('form-edicao');
+    const id    = form ? form.dataset.funcId : null;
+    const msgEl = document.getElementById('msg-edicao');
+    if (!id) { msgEl.style.color = 'red'; msgEl.textContent = 'Busque um funcionário primeiro.'; return; }
+    try {
+      const dados = await apiFetch('/funcionarios/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({
+          nomecompleto:    val('edit-nome'),
+          especializacao:  val('edit-espec'),
+          periodotrabalho: val('edit-periodo'),
+          categoria:       val('edit-cat'),
+          observacoes:     val('edit-obs'),
+          pausa1:          val('edit-pausa1'),
+          pausa2:          val('edit-pausa2'),
+          pausa3:          val('edit-pausa3')
+        })
+      });
+      if (dados && dados.status === 'sucesso') {
+        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário atualizado!';
+        carregarFuncionarios();
+      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao atualizar.'; }
+    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  }
+
+  window.salvarEdicao = salvarEdicao;
+
+  async function excluirFuncionario() {
+    const form  = document.getElementById('form-edicao');
+    const id    = form ? form.dataset.funcId : null;
+    const msgEl = document.getElementById('msg-edicao');
+    if (!id) return;
+    if (!confirm('Excluir este funcionário? Todos os erros serão mantidos.')) return;
+    try {
+      const dados = await apiFetch('/funcionarios/' + id, { method: 'DELETE' });
+      if (dados && dados.status === 'sucesso') {
+        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário excluído!';
+        form.style.display = 'none'; setVal('busca-nome', '');
+        carregarFuncionarios();
+      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao excluir.'; }
+    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  }
+
+  window.excluirFuncionario = excluirFuncionario;
+
+  async function importarPausas() {
+    const input = document.getElementById('arquivo-pausas');
+    const msgEl = document.getElementById('msg-import-pausas');
+    if (!input || !input.files[0]) { msgEl.style.color = 'red'; msgEl.textContent = 'Selecione um arquivo .xlsx.'; return; }
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    try {
+      const res = await fetch(API + '/importar-pausas', { method: 'POST', credentials: 'include', body: formData });
+      const dados = await res.json();
+      if (dados && dados.status === 'sucesso') { msgEl.style.color = 'green'; msgEl.textContent = dados.mensagem || '✓ Pausas importadas!'; }
+      else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao importar.'; }
+    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
+    setTimeout(() => { msgEl.textContent = ''; }, 4000);
+  }
+
+  window.importarPausas = importarPausas;
+
+  // ── init ───────────────────────────────────────────────────────────────────
+  function init() {
+    initNavigation();
+    initForms();
+    initSync();
+    initTheme();
+
+    const btnBack = document.getElementById('btn-back');
+    if (btnBack) btnBack.addEventListener('click', showList);
+
+    carregarFuncionarios();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+}());
