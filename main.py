@@ -555,3 +555,24 @@ def listar_periodos(request: Request):
     cur.execute("SELECT DISTINCT periodo FROM indicadores ORDER BY periodo DESC")
     rows = cur.fetchall()
     return {"periodos": [r[0] for r in rows]}
+
+# ── MIGRAÇÃO (remover após uso) ───────────────────────────────────────────────
+@app.post("/migrar")
+def migrar(request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    alteracoes = []
+    for col in ["pausa1", "pausa2", "pausa3", "observacoes", "especializacao", "periodotrabalho"]:
+        try:
+            cur.execute(f"ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS {col} TEXT DEFAULT ''")
+            alteracoes.append(col)
+        except Exception as e:
+            get_conn().rollback()
+    for tabela in ["feedbacks", "treinamentos", "indicadores"]:
+        try:
+            cur.execute(f"SELECT COUNT(*) FROM {tabela}")
+        except Exception:
+            get_conn().rollback()
+    commit()
+    return {"status": "sucesso", "mensagem": f"Migração concluída! Colunas verificadas: {alteracoes}"}
