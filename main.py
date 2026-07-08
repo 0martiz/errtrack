@@ -1,3 +1,4 @@
+cat > /mnt/user-data/outputs/main.py << 'PYEOF'
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -229,7 +230,6 @@ def setup():
     commit()
     return {"status": "sucesso", "mensagem": "Superadmin criado!"}
 
-# ── ROTA TEMPORÁRIA DE RESET (REMOVER APÓS USO) ───────────────────────────────
 @app.post("/reset-senha-temp")
 def reset_senha_temp():
     cur = get_cursor()
@@ -237,8 +237,22 @@ def reset_senha_temp():
                 (pwd_ctx.hash("Master@2026!"),))
     commit()
     if cur.rowcount:
-        return {"status": "sucesso", "mensagem": "Senha resetada com passlib!"}
+        return {"status": "sucesso", "mensagem": "Senha resetada!"}
     return JSONResponse(content={"mensagem": "Usuário não encontrado."}, status_code=404)
+
+# ── MIGRAÇÃO ──────────────────────────────────────────────────────────────────
+@app.post("/migrar")
+def migrar(request: Request):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    cur = get_cursor()
+    for col in ["pausa1", "pausa2", "pausa3", "observacoes", "especializacao", "periodotrabalho"]:
+        try:
+            cur.execute(f"ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS {col} TEXT DEFAULT ''")
+        except Exception:
+            get_conn().rollback()
+    commit()
+    return {"status": "sucesso", "mensagem": "Migração concluída!"}
 
 # ── ADMINS ────────────────────────────────────────────────────────────────────
 @app.get("/admins")
@@ -289,7 +303,11 @@ def listar_funcionarios(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    cur.execute("SELECT id,nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3 FROM funcionarios ORDER BY nomecompleto")
+    cur.execute("""
+        SELECT id, nomecompleto, especializacao, periodotrabalho, categoria,
+               observacoes, pausa1, pausa2, pausa3
+        FROM funcionarios ORDER BY nomecompleto
+    """)
     rows = cur.fetchall()
     return {"funcionarios": [{"id":r[0],"nomecompleto":r[1],"especializacao":r[2],"periodotrabalho":r[3],"categoria":r[4],"observacoes":r[5],"pausa1":r[6],"pausa2":r[7],"pausa3":r[8]} for r in rows]}
 
@@ -515,6 +533,8 @@ async def upload_indicadores(request: Request, file: UploadFile = File(...)):
     reader = csv.DictReader(io.StringIO(text), delimiter=";")
     periodo = time.strftime("%m/%Y")
     cur = get_cursor()
+    # Apaga registros do mesmo período antes de inserir (evita duplicatas)
+    cur.execute("DELETE FROM indicadores WHERE periodo = %s", (periodo,))
     inseridos = 0
     for row in reader:
         fila = (row.get("Fila") or "").strip().upper()
@@ -556,23 +576,21 @@ def listar_periodos(request: Request):
     rows = cur.fetchall()
     return {"periodos": [r[0] for r in rows]}
 
-# ── MIGRAÇÃO (remover após uso) ───────────────────────────────────────────────
-@app.post("/migrar")
-def migrar(request: Request):
+@app.post("/indicadores/limpar")
+def limpar_indicadores(request: Request):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
     cur = get_cursor()
-    alteracoes = []
-    for col in ["pausa1", "pausa2", "pausa3", "observacoes", "especializacao", "periodotrabalho"]:
-        try:
-            cur.execute(f"ALTER TABLE funcionarios ADD COLUMN IF NOT EXISTS {col} TEXT DEFAULT ''")
-            alteracoes.append(col)
-        except Exception as e:
-            get_conn().rollback()
-    for tabela in ["feedbacks", "treinamentos", "indicadores"]:
-        try:
-            cur.execute(f"SELECT COUNT(*) FROM {tabela}")
-        except Exception:
-            get_conn().rollback()
+    # Remove duplicatas mantendo apenas o registro com menor id por fila+periodo
+    cur.execute("""
+        DELETE FROM indicadores
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM indicadores GROUP BY fila, periodo
+        )
+    """)
+    removidos = cur.rowcount
     commit()
-    return {"status": "sucesso", "mensagem": f"Migração concluída! Colunas verificadas: {alteracoes}"}
+    return {"status": "sucesso", "mensagem": f"{removidos} duplicatas removidas!"}
+PYEOF
+echo "OK: $(wc -l < /mnt/user-data/outputs/main.py) linhas"
+Saída
