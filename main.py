@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/main.py << 'PYEOF'
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -591,6 +590,3 @@ def limpar_indicadores(request: Request):
     removidos = cur.rowcount
     commit()
     return {"status": "sucesso", "mensagem": f"{removidos} duplicatas removidas!"}
-PYEOF
-echo "OK: $(wc -l < /mnt/user-data/outputs/main.py) linhas"
-Saída
