@@ -339,7 +339,7 @@ def deletar_funcionario(fid: int, request: Request):
     commit()
     return {"status": "sucesso", "mensagem": "Funcionário removido!"}
 
-@app.post("/importar-pausas")
+@app.post("/funcionarios/importar-pausas")
 async def importar_pausas(request: Request, file: UploadFile = File(...)):
     if not usuario_autenticado(request):
         return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
