@@ -590,3 +590,50 @@ def limpar_indicadores(request: Request):
     removidos = cur.rowcount
     commit()
     return {"status": "sucesso", "mensagem": f"{removidos} duplicatas removidas!"}
+    @app.post("/importar-funcionarios")
+async def importar_funcionarios(request: Request, file: UploadFile = File(...)):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    import openpyxl
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    ws = wb["Funcionários"]
+    cur = get_cursor()
+    inseridos = 0
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row[0]: continue
+        nome = str(row[0]).strip()
+        cat  = str(row[1]).strip() if row[1] else ""
+        espec= str(row[2]).strip() if row[2] else ""
+        per  = str(row[3]).strip() if row[3] else ""
+        obs  = str(row[4]).strip() if row[4] else ""
+        cur.execute("SELECT id FROM funcionarios WHERE nomecompleto ILIKE %s", (nome,))
+        if cur.fetchone(): continue  # já existe
+        cur.execute("INSERT INTO funcionarios(nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3) VALUES(%s,%s,%s,%s,%s,'','','')",
+                    (nome,espec,per,cat,obs))
+        inseridos += 1
+    commit()
+    return {"status":"sucesso","mensagem":f"{inseridos} funcionários importados!"}
+
+@app.post("/importar-erros")
+async def importar_erros_bulk(request: Request, file: UploadFile = File(...)):
+    if not usuario_autenticado(request):
+        return JSONResponse(content={"mensagem": "Não autorizado."}, status_code=401)
+    import openpyxl
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content))
+    ws = wb["Erros"]
+    cur = get_cursor()
+    inseridos = 0
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row[0]: continue
+        nome = str(row[0]).strip()
+        grav = str(row[1]).strip() if row[1] else "media"
+        desc = str(row[2]).strip() if row[2] else ""
+        cat  = str(row[3]).strip() if row[3] else ""
+        per  = str(row[4]).strip() if row[4] else ""
+        cur.execute("INSERT INTO erros(nomefuncionario,periodo,descricao,gravidade,categoria,ts) VALUES(%s,%s,%s,%s,%s,%s)",
+                    (nome,per,desc,grav,cat,int(time.time())))
+        inseridos += 1
+    commit()
+    return {"status":"sucesso","mensagem":f"{inseridos} erros importados!"}
