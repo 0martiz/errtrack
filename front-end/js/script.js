@@ -33,7 +33,6 @@
     if (overlay) overlay.style.display = 'none';
     if (page === 'painel') showList();
   }
-
   window.goTo = goTo;
 
   function initNavigation() {
@@ -53,39 +52,21 @@
     });
   }
 
-  // ── dashboard ──────────────────────────────────────────────────────────────
-  async function renderDashboard() {
-    const dados = await apiFetch('/erros');
-    if (!dados) return;
-    const erros = dados.erros || [];
-    const DB = {};
-    erros.forEach(e => {
-      if (!DB[e.nomefuncionario]) DB[e.nomefuncionario] = { categoria: e.cat_func || e.categoria || '', errors: [] };
-      DB[e.nomefuncionario].errors.push(e);
-    });
-
-    // Atualiza grids via renderDashCards do HTML inline
-    if (typeof renderDashCards === 'function') renderDashCards();
-  }
-
-  window.renderDashboard = renderDashboard;
-
   // ── detalhe do funcionário ─────────────────────────────────────────────────
   async function openDetail(nome) {
     const dados = await apiFetch('/erros/' + encodeURIComponent(nome));
     if (!dados) return;
     const erros = dados.erros || [];
 
-    // Esconde lista, mostra detalhe
     const pnList   = document.getElementById('pn-list');
     const pnDetail = document.getElementById('pn-detail');
     if (pnList)   pnList.style.display   = 'none';
     if (pnDetail) pnDetail.style.display = 'block';
 
-    setText('d-name',    nome);
-    setText('dm-total',  erros.length);
-    setText('dm-avg',    getAvg(erros));
-    setText('dm-critica',erros.filter(e => e.gravidade === 'critica').length);
+    setText('d-name',     nome);
+    setText('dm-total',   erros.length);
+    setText('dm-avg',     getAvg(erros));
+    setText('dm-critica', erros.filter(e => e.gravidade === 'critica').length);
 
     const periods = [...new Set(erros.map(e => e.periodo).filter(Boolean))];
     setText('dm-period', periods[periods.length - 1] || '—');
@@ -101,7 +82,6 @@
     renderDetailChart(erros);
     renderErrList(nome, erros);
   }
-
   window.openDetail = openDetail;
 
   function renderDetailChart(erros) {
@@ -133,24 +113,8 @@
       data: {
         labels: labs,
         datasets: [
-          {
-            label: 'Gravidade Média',
-            data: avgs,
-            borderColor: '#8b5cf6',
-            backgroundColor: gradP,
-            tension: 0.4, fill: true,
-            pointRadius: 4, pointBackgroundColor: '#8b5cf6',
-            pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6
-          },
-          {
-            label: 'Críticos',
-            data: crits,
-            borderColor: '#ef4444',
-            backgroundColor: 'rgba(239,68,68,0.08)',
-            tension: 0.4, fill: true,
-            pointRadius: 4, pointBackgroundColor: '#ef4444',
-            pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6
-          }
+          { label: 'Gravidade Média', data: avgs, borderColor: '#8b5cf6', backgroundColor: gradP, tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#8b5cf6', pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6 },
+          { label: 'Críticos', data: crits, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#ef4444', pointBorderColor: '#111827', pointBorderWidth: 2, pointHoverRadius: 6 }
         ]
       },
       options: {
@@ -161,14 +125,7 @@
           tooltip: { backgroundColor: '#111827', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 }
         },
         scales: {
-          y: {
-            min: 0, max: 4,
-            ticks: {
-              color: '#64748b', font: { size: 10 },
-              callback: v => ['', 'Baixa', 'Média', 'Alta', 'Crítica'][Math.round(v)] || ''
-            },
-            grid: { color: 'rgba(255,255,255,.04)' }
-          },
+          y: { min: 0, max: 4, ticks: { color: '#64748b', font: { size: 10 }, callback: v => ['','Baixa','Média','Alta','Crítica'][Math.round(v)] || '' }, grid: { color: 'rgba(255,255,255,.04)' } },
           x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } }
         }
       }
@@ -213,7 +170,6 @@
     if (pnDetail) pnDetail.style.display = 'none';
     if (typeof refreshDashboard === 'function') refreshDashboard();
   }
-
   window.showList = showList;
 
   // ── registrar erro ─────────────────────────────────────────────────────────
@@ -307,6 +263,139 @@
       }
     } catch { console.error('Erro ao carregar funcionários.'); }
   }
+  window.carregarFuncionarios = carregarFuncionarios;
+
+  // ── cadastro de funcionário ────────────────────────────────────────────────
+  async function pegaFuncionario() {
+    const nome  = val('funcionarionome');
+    const espec = val('especializacao');
+    const per   = val('periodotrabalho');
+    const cat   = val('categoria');
+    const obs   = val('observacoes');
+    const p1    = val('pausa1');
+    const p2    = val('pausa2');
+    const p3    = val('pausa3');
+    const msgEl = document.getElementById('save-msg-func');
+    if (!nome || !cat) {
+      if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Nome e categoria são obrigatórios.'; }
+      return;
+    }
+    try {
+      const dados = await apiFetch('/funcionarios', {
+        method: 'POST',
+        body: JSON.stringify({ nomecompleto: nome, especializacao: espec, periodotrabalho: per, categoria: cat, observacoes: obs, pausa1: p1, pausa2: p2, pausa3: p3 })
+      });
+      if (dados && dados.status === 'sucesso') {
+        if (msgEl) { msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário salvo!'; }
+        ['funcionarionome','especializacao','observacoes','pausa1','pausa2','pausa3'].forEach(id => setVal(id, ''));
+        const selPer = document.getElementById('periodotrabalho');
+        const selCat = document.getElementById('categoria');
+        if (selPer) selPer.selectedIndex = 0;
+        if (selCat) selCat.selectedIndex = 0;
+        carregarFuncionarios();
+        setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3500);
+      } else {
+        if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao salvar.'; }
+      }
+    } catch {
+      if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
+    }
+  }
+  window.pegaFuncionario = pegaFuncionario;
+
+  async function buscarFuncionario() {
+    const nome  = val('busca-nome');
+    const msgEl = document.getElementById('msg-edicao');
+    const form  = document.getElementById('form-edicao');
+    if (!nome) { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Digite um nome para buscar.'; } return; }
+    try {
+      const dados = await apiFetch('/funcionarios');
+      const lista = dados ? (dados.funcionarios || []) : [];
+      const func  = lista.find(f => f.nomecompleto.toLowerCase().includes(nome.toLowerCase()));
+      if (!func) {
+        if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Funcionário não encontrado.'; }
+        if (form) form.style.display = 'none';
+        return;
+      }
+      if (form) form.style.display = 'block';
+      setVal('edit-nome',   func.nomecompleto);
+      setVal('edit-espec',  func.especializacao || '');
+      setVal('edit-obs',    func.observacoes || '');
+      setVal('edit-pausa1', func.pausa1 || '');
+      setVal('edit-pausa2', func.pausa2 || '');
+      setVal('edit-pausa3', func.pausa3 || '');
+      const selPer = document.getElementById('edit-periodo');
+      if (selPer) selPer.value = func.periodotrabalho || '';
+      const selCat = document.getElementById('edit-cat');
+      if (selCat) selCat.value = func.categoria || '';
+      if (form) form.dataset.funcId = func.id;
+      if (msgEl) msgEl.textContent = '';
+    } catch { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao buscar.'; } }
+  }
+  window.buscarFuncionario = buscarFuncionario;
+
+  async function salvarEdicao() {
+    const form  = document.getElementById('form-edicao');
+    const id    = form ? form.dataset.funcId : null;
+    const msgEl = document.getElementById('msg-edicao');
+    if (!id) { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Busque um funcionário primeiro.'; } return; }
+    try {
+      const dados = await apiFetch('/funcionarios/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({
+          nomecompleto: val('edit-nome'), especializacao: val('edit-espec'),
+          periodotrabalho: val('edit-periodo'), categoria: val('edit-cat'),
+          observacoes: val('edit-obs'), pausa1: val('edit-pausa1'),
+          pausa2: val('edit-pausa2'), pausa3: val('edit-pausa3')
+        })
+      });
+      if (dados && dados.status === 'sucesso') {
+        if (msgEl) { msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário atualizado!'; }
+        carregarFuncionarios();
+      } else {
+        if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao atualizar.'; }
+      }
+    } catch { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; } }
+    setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3500);
+  }
+  window.salvarEdicao = salvarEdicao;
+
+  async function excluirFuncionario() {
+    const form  = document.getElementById('form-edicao');
+    const id    = form ? form.dataset.funcId : null;
+    const msgEl = document.getElementById('msg-edicao');
+    if (!id) return;
+    if (!confirm('Excluir este funcionário?')) return;
+    try {
+      const dados = await apiFetch('/funcionarios/' + id, { method: 'DELETE' });
+      if (dados && dados.status === 'sucesso') {
+        if (msgEl) { msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário excluído!'; }
+        if (form) form.style.display = 'none';
+        setVal('busca-nome', '');
+        carregarFuncionarios();
+      } else {
+        if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao excluir.'; }
+      }
+    } catch { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; } }
+    setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3500);
+  }
+  window.excluirFuncionario = excluirFuncionario;
+
+  async function importarPausas() {
+    const input = document.getElementById('arquivo-pausas');
+    const msgEl = document.getElementById('msg-import-pausas');
+    if (!input || !input.files[0]) { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Selecione um arquivo .xlsx.'; } return; }
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    try {
+      const res   = await fetch(API + '/importar-pausas', { method: 'POST', credentials: 'include', body: formData });
+      const dados = await res.json();
+      if (dados && dados.status === 'sucesso') { if (msgEl) { msgEl.style.color = 'green'; msgEl.textContent = dados.mensagem || '✓ Pausas importadas!'; } }
+      else { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao importar.'; } }
+    } catch { if (msgEl) { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; } }
+    setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 4000);
+  }
+  window.importarPausas = importarPausas;
 
   // ── utilitários ────────────────────────────────────────────────────────────
   function getTrend(e) {
@@ -315,7 +404,7 @@
     const a1 = e.slice(0, h).reduce((s, x) => s + (SEV_W[x.gravidade] || 1), 0) / h;
     const a2 = e.slice(h).reduce((s, x) => s + (SEV_W[x.gravidade] || 1), 0) / (e.length - h);
     const diff = a2 - a1;
-    if (diff > 0.3)  return 'up';
+    if (diff > 0.3) return 'up';
     if (diff < -0.3) return 'down';
     return 'flat';
   }
@@ -337,144 +426,17 @@
     clearTimeout(t._tid);
     t._tid = setTimeout(() => t.classList.remove('on'), 3600);
   }
-
   window.showToast = showToast;
 
   function htmlEsc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
   }
-
   window.htmlEsc = htmlEsc;
 
-  function val(id)       { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
-  function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
-  function setText(id, v){ const el = document.getElementById(id); if (el) el.textContent = v; }
-
-  // ── funcionários: cadastro, edição, exclusão, pausas ──────────────────────
-  async function pegaFuncionario() {
-    const nome  = val('funcionarionome');
-    const espec = val('especializacao');
-    const per   = val('periodotrabalho');
-    const cat   = val('categoria');
-    const obs   = val('observacoes');
-    const p1    = val('pausa1');
-    const p2    = val('pausa2');
-    const p3    = val('pausa3');
-    const msgEl = document.getElementById('save-msg-func');
-    if (!nome || !cat) {
-      msgEl.style.color = 'red'; msgEl.textContent = 'Nome e categoria são obrigatórios.'; return;
-    }
-    try {
-      const dados = await apiFetch('/funcionarios', {
-        method: 'POST',
-        body: JSON.stringify({ nomecompleto: nome, especializacao: espec, periodotrabalho: per, categoria: cat, observacoes: obs, pausa1: p1, pausa2: p2, pausa3: p3 })
-      });
-      if (dados && dados.status === 'sucesso') {
-        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário salvo!';
-        ['funcionarionome','especializacao','observacoes','pausa1','pausa2','pausa3'].forEach(id => setVal(id, ''));
-        document.getElementById('periodotrabalho').selectedIndex = 0;
-        document.getElementById('categoria').selectedIndex = 0;
-        carregarFuncionarios();
-      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao salvar.'; }
-    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
-    setTimeout(() => { msgEl.textContent = ''; }, 3500);
-  }
-
-  window.pegaFuncionario = pegaFuncionario;
-
-  async function buscarFuncionario() {
-    const nome  = val('busca-nome');
-    const msgEl = document.getElementById('msg-edicao');
-    const form  = document.getElementById('form-edicao');
-    if (!nome) { msgEl.style.color = 'red'; msgEl.textContent = 'Digite um nome para buscar.'; return; }
-    try {
-      const dados = await apiFetch('/funcionarios');
-      const lista = dados ? (dados.funcionarios || []) : [];
-      const func  = lista.find(f => f.nomecompleto.toLowerCase().includes(nome.toLowerCase()));
-      if (!func) { msgEl.style.color = 'red'; msgEl.textContent = 'Funcionário não encontrado.'; form.style.display = 'none'; return; }
-      form.style.display = 'block';
-      setVal('edit-nome',   func.nomecompleto);
-      setVal('edit-espec',  func.especializacao || '');
-      setVal('edit-obs',    func.observacoes || '');
-      setVal('edit-pausa1', func.pausa1 || '');
-      setVal('edit-pausa2', func.pausa2 || '');
-      setVal('edit-pausa3', func.pausa3 || '');
-      const selPer = document.getElementById('edit-periodo');
-      if (selPer) selPer.value = func.periodotrabalho || '';
-      const selCat = document.getElementById('edit-cat');
-      if (selCat) selCat.value = func.categoria || '';
-      form.dataset.funcId = func.id;
-      msgEl.textContent = '';
-    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao buscar.'; }
-  }
-
-  window.buscarFuncionario = buscarFuncionario;
-
-  async function salvarEdicao() {
-    const form  = document.getElementById('form-edicao');
-    const id    = form ? form.dataset.funcId : null;
-    const msgEl = document.getElementById('msg-edicao');
-    if (!id) { msgEl.style.color = 'red'; msgEl.textContent = 'Busque um funcionário primeiro.'; return; }
-    try {
-      const dados = await apiFetch('/funcionarios/' + id, {
-        method: 'PUT',
-        body: JSON.stringify({
-          nomecompleto:    val('edit-nome'),
-          especializacao:  val('edit-espec'),
-          periodotrabalho: val('edit-periodo'),
-          categoria:       val('edit-cat'),
-          observacoes:     val('edit-obs'),
-          pausa1:          val('edit-pausa1'),
-          pausa2:          val('edit-pausa2'),
-          pausa3:          val('edit-pausa3')
-        })
-      });
-      if (dados && dados.status === 'sucesso') {
-        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário atualizado!';
-        carregarFuncionarios();
-      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao atualizar.'; }
-    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
-    setTimeout(() => { msgEl.textContent = ''; }, 3500);
-  }
-
-  window.salvarEdicao = salvarEdicao;
-
-  async function excluirFuncionario() {
-    const form  = document.getElementById('form-edicao');
-    const id    = form ? form.dataset.funcId : null;
-    const msgEl = document.getElementById('msg-edicao');
-    if (!id) return;
-    if (!confirm('Excluir este funcionário? Todos os erros serão mantidos.')) return;
-    try {
-      const dados = await apiFetch('/funcionarios/' + id, { method: 'DELETE' });
-      if (dados && dados.status === 'sucesso') {
-        msgEl.style.color = 'green'; msgEl.textContent = '✓ Funcionário excluído!';
-        form.style.display = 'none'; setVal('busca-nome', '');
-        carregarFuncionarios();
-      } else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao excluir.'; }
-    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
-    setTimeout(() => { msgEl.textContent = ''; }, 3500);
-  }
-
-  window.excluirFuncionario = excluirFuncionario;
-
-  async function importarPausas() {
-    const input = document.getElementById('arquivo-pausas');
-    const msgEl = document.getElementById('msg-import-pausas');
-    if (!input || !input.files[0]) { msgEl.style.color = 'red'; msgEl.textContent = 'Selecione um arquivo .xlsx.'; return; }
-    const formData = new FormData();
-    formData.append('file', input.files[0]);
-    try {
-      const res = await fetch(API + '/importar-pausas', { method: 'POST', credentials: 'include', body: formData });
-      const dados = await res.json();
-      if (dados && dados.status === 'sucesso') { msgEl.style.color = 'green'; msgEl.textContent = dados.mensagem || '✓ Pausas importadas!'; }
-      else { msgEl.style.color = 'red'; msgEl.textContent = (dados && dados.mensagem) || 'Erro ao importar.'; }
-    } catch { msgEl.style.color = 'red'; msgEl.textContent = 'Erro ao conectar.'; }
-    setTimeout(() => { msgEl.textContent = ''; }, 4000);
-  }
-
-  window.importarPausas = importarPausas;
+  function val(id)        { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  function setVal(id, v)  { const el = document.getElementById(id); if (el) el.value = v; }
+  function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 
   // ── init ───────────────────────────────────────────────────────────────────
   function init() {
@@ -482,10 +444,8 @@
     initForms();
     initSync();
     initTheme();
-
     const btnBack = document.getElementById('btn-back');
     if (btnBack) btnBack.addEventListener('click', showList);
-
     carregarFuncionarios();
   }
 
