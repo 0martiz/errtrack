@@ -416,6 +416,13 @@ async function carregarAdmins() {
   }
 }
 
+  <div style="margin-top:16px;">
+  <label>Importar planilha completa (Funcionários + Erros):</label>
+  <input type="file" id="arquivo-completo" accept=".xlsx">
+  <button onclick="importarCompleto()">Importar Tudo</button>
+  <div id="msg-import-completo" style="font-size:12px;margin-top:6px;"></div>
+</div>
+
 document.getElementById('btn-nav-admins').addEventListener('click', carregarAdmins);
 </script>
 </body>
