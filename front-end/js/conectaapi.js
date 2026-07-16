@@ -1,4 +1,5 @@
-const API = "https://errtrack-45jm.onrender.com";
+const API = window.location.origin;
+
 
 async function apiFetch(path, options = {}) {
     const res = await fetch(API + path, {
