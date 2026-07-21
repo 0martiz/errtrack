@@ -275,7 +275,7 @@ def exportar_excel(request:Request):
     out=io.StringIO(); out.write('\ufeff'); out.write('Funcionário,Período,Descrição,Gravidade,Categoria,Data\n')
     for r in rows: out.write(','.join([f'"{str(x or "").replace(chr(34),chr(39))}"' for x in r])+'\n')
     out.seek(0)
-    return StreamingResponse(io.BytesIO(out.getvalue().encode('utf-8')),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="errtrack_export.xlsx"'})
+    return StreamingResponse(io.BytesIO(out.getvalue().encode('utf-8')),media_type='text/csv',headers={''Content-Disposition':'attachment; filename="errtrack_export.csv"'"'})
 
 @app.get("/feedbacks")
 def listar_feedbacks(request:Request):
