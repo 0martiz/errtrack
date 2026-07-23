@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from jose import jwt, JWTError
 from passlib.context import CryptContext
-import psycopg2, os, time, io, csv, unicodedata
+import psycopg2, os, time, io, csv
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -55,17 +55,6 @@ class FuncionarioData(BaseModel): nomecompleto:str; especializacao:str=""; perio
 class AdminData(BaseModel): usuario:str; senha:str; pode_criar_admins:bool=False
 class Feedback(BaseModel): nomefuncionario:str; nota_geral:float; pontos_melhora:str; texto_feedback:str; aplicado_por:str
 class Treinamento(BaseModel): nomefuncionario:str; titulo:str; descricao:str=""; status:str="pendente"; aplicado_por:str
-
-def normalizar_txt(v):
-    return unicodedata.normalize("NFKD", str(v or "")).encode("ascii", "ignore").decode("ascii").strip().lower()
-
-def gravidade_ok(v):
-    g = normalizar_txt(v)
-    if g in ("critico", "critica", "urgente"): return "critica"
-    if g in ("alto", "alta", "grave"): return "alta"
-    if g in ("medio", "media", "moderado", "moderada"): return "media"
-    if g in ("baixo", "baixa", "leve"): return "baixa"
-    return "media"
 
 def criar_token(u,r): return jwt.encode({"sub":u,"role":r,"exp":time.time()+86400*7},SECRET_KEY,algorithm=ALGORITHM)
 def usuario_autenticado(request):
@@ -152,13 +141,6 @@ def listar_funcionarios(request:Request):
     cur=get_cursor(); cur.execute("SELECT id,nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3 FROM funcionarios ORDER BY nomecompleto"); rows=cur.fetchall()
     return {"funcionarios":[{"id":r[0],"nomecompleto":r[1],"especializacao":r[2],"periodotrabalho":r[3],"categoria":r[4],"observacoes":r[5],"pausa1":r[6],"pausa2":r[7],"pausa3":r[8]} for r in rows]}
 
-@app.get("/funcionarios/buscar/{nome}")
-def buscar_funcionario(nome:str,request:Request):
-    if not usuario_autenticado(request): return JSONResponse({"mensagem":"Nao autorizado."},status_code=401)
-    cur=get_cursor(); cur.execute("SELECT id,nomecompleto,especializacao,periodotrabalho,categoria,observacoes,pausa1,pausa2,pausa3 FROM funcionarios WHERE nomecompleto ILIKE %s ORDER BY nomecompleto LIMIT 1",(f"%{nome}%",)); r=cur.fetchone()
-    if not r: return {"funcionario":None}
-    return {"funcionario":{"id":r[0],"nomecompleto":r[1],"especializacao":r[2],"periodotrabalho":r[3],"categoria":r[4],"observacoes":r[5],"pausa1":r[6],"pausa2":r[7],"pausa3":r[8]}}
-
 @app.post("/funcionarios")
 def criar_funcionario(data:FuncionarioData,request:Request):
     if not usuario_autenticado(request): return JSONResponse({"mensagem":"Não autorizado."},status_code=401)
@@ -170,18 +152,6 @@ def atualizar_funcionario(fid:int,data:FuncionarioData,request:Request):
     if not usuario_autenticado(request): return JSONResponse({"mensagem":"Não autorizado."},status_code=401)
     cur=get_cursor(); cur.execute("UPDATE funcionarios SET nomecompleto=%s,especializacao=%s,periodotrabalho=%s,categoria=%s,observacoes=%s,pausa1=%s,pausa2=%s,pausa3=%s WHERE id=%s",(data.nomecompleto,data.especializacao,data.periodotrabalho,data.categoria,data.observacoes,data.pausa1,data.pausa2,data.pausa3,fid)); commit()
     return {"status":"sucesso","mensagem":"Funcionário atualizado!"}
-
-@app.put("/funcionarios/nome/{nome}")
-def atualizar_funcionario_por_nome(nome:str,data:FuncionarioData,request:Request):
-    if not usuario_autenticado(request): return JSONResponse({"mensagem":"Nao autorizado."},status_code=401)
-    cur=get_cursor(); cur.execute("UPDATE funcionarios SET nomecompleto=%s,especializacao=%s,periodotrabalho=%s,categoria=%s,observacoes=%s,pausa1=%s,pausa2=%s,pausa3=%s WHERE nomecompleto ILIKE %s",(data.nomecompleto,data.especializacao,data.periodotrabalho,data.categoria,data.observacoes,data.pausa1,data.pausa2,data.pausa3,nome)); commit()
-    return {"status":"sucesso","mensagem":"Funcionario atualizado!"}
-
-@app.delete("/funcionarios/nome/{nome}")
-def deletar_funcionario_por_nome(nome:str,request:Request):
-    if not usuario_autenticado(request): return JSONResponse({"mensagem":"Nao autorizado."},status_code=401)
-    cur=get_cursor(); cur.execute("DELETE FROM funcionarios WHERE nomecompleto ILIKE %s",(nome,)); commit()
-    return {"status":"sucesso","mensagem":"Funcionario removido!"}
 
 @app.delete("/funcionarios/{fid}")
 def deletar_funcionario(fid:int,request:Request):
@@ -216,33 +186,11 @@ async def importar_funcionarios(request:Request,file:UploadFile=File(...)):
 async def importar_erros_bulk(request:Request,file:UploadFile=File(...)):
     if not usuario_autenticado(request): return JSONResponse({"mensagem":"Não autorizado."},status_code=401)
     import openpyxl
-    raw = await file.read()
-    filename = (file.filename or "").lower()
-    rows = []
-    if filename.endswith(".csv"):
-        text = raw.decode("utf-8-sig", errors="ignore")
-        delimiter = ";" if text[:2048].count(";") >= text[:2048].count(",") else ","
-        rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
-    else:
-        wb=openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
-        ws=wb["Erros"] if "Erros" in wb.sheetnames else wb.active
-        headers=[normalizar_txt(c.value) for c in ws[1]]
-        for row in ws.iter_rows(min_row=2,values_only=True):
-            rows.append({headers[i] if i < len(headers) else str(i): row[i] for i in range(len(row))})
-
-    cur=get_cursor(); n=0; ignorados=0
-    for item in rows:
-        keys={normalizar_txt(k): v for k,v in item.items()}
-        nome=keys.get("funcionario") or keys.get("nomefuncionario") or keys.get("nome") or keys.get("operador") or keys.get("colaborador") or keys.get("0")
-        gravidade=keys.get("gravidade") or keys.get("severidade") or keys.get("nivel") or keys.get("1") or "media"
-        descricao=keys.get("descricao") or keys.get("erro") or keys.get("observacao") or keys.get("2")
-        categoria=keys.get("categoria") or keys.get("tipo") or keys.get("area") or keys.get("3") or ""
-        periodo=keys.get("periodo") or keys.get("data") or keys.get("semana") or keys.get("4") or ""
-        if not nome or not descricao:
-            ignorados += 1
-            continue
-        cur.execute("INSERT INTO erros(nomefuncionario,periodo,descricao,gravidade,categoria,ts) VALUES(%s,%s,%s,%s,%s,%s)",(str(nome).strip(),str(periodo or ""),str(descricao or ""),gravidade_ok(gravidade),str(categoria or ""),int(time.time()))); n+=1
-    commit(); return {"status":"sucesso","mensagem":f"{n} erros importados! {ignorados} linha(s) ignorada(s)."}
+    wb=openpyxl.load_workbook(io.BytesIO(await file.read())); ws=wb["Erros"]; cur=get_cursor(); n=0
+    for row in ws.iter_rows(min_row=2,values_only=True):
+        if not row[0]: continue
+        cur.execute("INSERT INTO erros(nomefuncionario,periodo,descricao,gravidade,categoria,ts) VALUES(%s,%s,%s,%s,%s,%s)",(str(row[0]).strip(),str(row[4] or ""),str(row[2] or ""),str(row[1] or "media"),str(row[3] or ""),int(time.time()))); n+=1
+    commit(); return {"status":"sucesso","mensagem":f"{n} erros importados!"}
 
 @app.get("/erros")
 def listar_erros(request:Request):
@@ -275,7 +223,7 @@ def exportar_excel(request:Request):
     out=io.StringIO(); out.write('\ufeff'); out.write('Funcionário,Período,Descrição,Gravidade,Categoria,Data\n')
     for r in rows: out.write(','.join([f'"{str(x or "").replace(chr(34),chr(39))}"' for x in r])+'\n')
     out.seek(0)
-    return StreamingResponse(io.BytesIO(out.getvalue().encode('utf-8')),media_type='text/csv',headers={'Content-Disposition':'attachment; filename=errtrack_export.csv'})
+    return StreamingResponse(io.BytesIO(out.getvalue().encode('utf-8')),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="errtrack_export.xlsx"'})
 
 @app.get("/feedbacks")
 def listar_feedbacks(request:Request):
